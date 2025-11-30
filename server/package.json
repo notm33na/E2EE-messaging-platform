@@ -1,0 +1,36 @@
+{
+  "name": "infosec-server",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Secure backend server with HTTPS and WebSockets",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "generate-keys": "node scripts/generate-keys.js"
+  },
+  "keywords": [
+    "express",
+    "mongodb",
+    "websocket",
+    "https"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "express-validator": "^7.0.1",
+    "helmet": "^7.1.0",
+    "infosec-monorepo": "file:..",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.0.3",
+    "morgan": "^1.10.0",
+    "selfsigned": "^2.1.1",
+    "socket.io": "^4.6.1"
+  }
+}

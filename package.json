@@ -1,0 +1,23 @@
+{
+  "name": "infosec-monorepo",
+  "version": "1.0.0",
+  "description": "Secure E2EE Messaging & File-Sharing System",
+  "type": "module",
+  "scripts": {
+    "install:all": "npm install && cd server && npm install && cd ../client && npm install",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "build": "cd client && npm run build",
+    "test": "echo 'Tests can be run with: node integration/fullSystemTest.js'",
+    "start": "cd server && npm start"
+  },
+  "keywords": [
+    "e2ee",
+    "encryption",
+    "messaging",
+    "security",
+    "cryptography"
+  ],
+  "author": "",
+  "license": "ISC"
+}
