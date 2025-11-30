@@ -6,12 +6,21 @@ import mongoose from 'mongoose';
  */
 export async function connectDatabase(mongoUri) {
   try {
-    await mongoose.connect(mongoUri, {
+    // Ensure database name is included in connection string
+    let connectionUri = mongoUri;
+    if (!connectionUri.includes('/infosec') && !connectionUri.includes('?') && !connectionUri.includes('#')) {
+      // Add database name if not present
+      connectionUri = connectionUri.replace(/\/$/, '') + '/infosec';
+    }
+    
+    await mongoose.connect(connectionUri, {
       // Modern MongoDB driver options
       serverSelectionTimeoutMS: 5000,
+      dbName: 'infosec', // Explicitly set database name
     });
     
     console.log('✓ Connected to MongoDB Atlas');
+    console.log(`✓ Using database: ${mongoose.connection.db.databaseName}`);
     
     // Handle connection events
     mongoose.connection.on('error', (err) => {

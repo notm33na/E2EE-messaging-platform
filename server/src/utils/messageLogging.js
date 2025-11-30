@@ -32,7 +32,22 @@ export function logMessageMetadataAccess(userId, sessionId, action, metadata = {
   const logLine = JSON.stringify(logEntry) + '\n';
   const logPath = path.join(LOGS_DIR, 'message_metadata_access.log');
 
+  // Ensure directory exists
+  if (!fs.existsSync(LOGS_DIR)) {
+    fs.mkdirSync(LOGS_DIR, { recursive: true });
+  }
+
   fs.appendFileSync(logPath, logLine, { flag: 'a' });
+  // Force sync to ensure write is committed (if file exists)
+  try {
+    if (fs.existsSync(logPath)) {
+      const fd = fs.openSync(logPath, 'r+');
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+    }
+  } catch (err) {
+    // Ignore sync errors, write should still be committed
+  }
 }
 
 /**
@@ -55,7 +70,22 @@ export function logMessageForwarding(senderId, receiverId, sessionId, messageTyp
   const logLine = JSON.stringify(logEntry) + '\n';
   const logPath = path.join(LOGS_DIR, 'msg_forwarding.log');
 
+  // Ensure directory exists
+  if (!fs.existsSync(LOGS_DIR)) {
+    fs.mkdirSync(LOGS_DIR, { recursive: true });
+  }
+
   fs.appendFileSync(logPath, logLine, { flag: 'a' });
+  // Force sync to ensure write is committed (if file exists)
+  try {
+    if (fs.existsSync(logPath)) {
+      const fd = fs.openSync(logPath, 'r+');
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+    }
+  } catch (err) {
+    // Ignore sync errors, write should still be committed
+  }
 }
 
 /**
@@ -78,7 +108,22 @@ export function logFileChunkForwarding(senderId, receiverId, sessionId, chunkInd
   const logLine = JSON.stringify(logEntry) + '\n';
   const logPath = path.join(LOGS_DIR, 'file_chunk_forwarding.log');
 
+  // Ensure directory exists
+  if (!fs.existsSync(LOGS_DIR)) {
+    fs.mkdirSync(LOGS_DIR, { recursive: true });
+  }
+
   fs.appendFileSync(logPath, logLine, { flag: 'a' });
+  // Force sync to ensure write is committed (if file exists)
+  try {
+    if (fs.existsSync(logPath)) {
+      const fd = fs.openSync(logPath, 'r+');
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+    }
+  } catch (err) {
+    // Ignore sync errors, write should still be committed
+  }
 }
 
 /**
@@ -101,7 +146,22 @@ export function logReplayDetected(userId, sessionId, seq, reason) {
   const logLine = JSON.stringify(logEntry) + '\n';
   const logPath = path.join(LOGS_DIR, 'replay_detected.log');
 
+  // Ensure directory exists
+  if (!fs.existsSync(LOGS_DIR)) {
+    fs.mkdirSync(LOGS_DIR, { recursive: true });
+  }
+
   fs.appendFileSync(logPath, logLine, { flag: 'a' });
+  // Force sync to ensure write is committed (if file exists)
+  try {
+    if (fs.existsSync(logPath)) {
+      const fd = fs.openSync(logPath, 'r+');
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+    }
+  } catch (err) {
+    // Ignore sync errors, write should still be committed
+  }
   console.warn(`⚠️  Replay detected: ${reason}`, logEntry);
 }
 

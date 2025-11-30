@@ -32,7 +32,22 @@ export function logReplayAttempt(sessionId, seq, timestamp, reason) {
   const logLine = JSON.stringify(logEntry) + '\n';
   const logPath = path.join(LOGS_DIR, 'replay_attempts.log');
 
+  // Ensure directory exists
+  if (!fs.existsSync(LOGS_DIR)) {
+    fs.mkdirSync(LOGS_DIR, { recursive: true });
+  }
+
   fs.appendFileSync(logPath, logLine, { flag: 'a' });
+  // Force sync to ensure write is committed (if file exists)
+  try {
+    if (fs.existsSync(logPath)) {
+      const fd = fs.openSync(logPath, 'r+');
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+    }
+  } catch (err) {
+    // Ignore sync errors, write should still be committed
+  }
   console.warn(`⚠️  Replay attempt detected: ${reason}`, logEntry);
 }
 
@@ -54,7 +69,22 @@ export function logInvalidSignature(userId, sessionId, reason) {
   const logLine = JSON.stringify(logEntry) + '\n';
   const logPath = path.join(LOGS_DIR, 'invalid_signature.log');
 
+  // Ensure directory exists
+  if (!fs.existsSync(LOGS_DIR)) {
+    fs.mkdirSync(LOGS_DIR, { recursive: true });
+  }
+
   fs.appendFileSync(logPath, logLine, { flag: 'a' });
+  // Force sync to ensure write is committed (if file exists)
+  try {
+    if (fs.existsSync(logPath)) {
+      const fd = fs.openSync(logPath, 'r+');
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+    }
+  } catch (err) {
+    // Ignore sync errors, write should still be committed
+  }
   console.warn(`⚠️  Invalid signature detected: ${reason}`, logEntry);
 }
 
@@ -76,7 +106,22 @@ export function logInvalidKEPMessage(userId, sessionId, reason) {
   const logLine = JSON.stringify(logEntry) + '\n';
   const logPath = path.join(LOGS_DIR, 'invalid_kep_message.log');
 
+  // Ensure directory exists
+  if (!fs.existsSync(LOGS_DIR)) {
+    fs.mkdirSync(LOGS_DIR, { recursive: true });
+  }
+
   fs.appendFileSync(logPath, logLine, { flag: 'a' });
+  // Force sync to ensure write is committed (if file exists)
+  try {
+    if (fs.existsSync(logPath)) {
+      const fd = fs.openSync(logPath, 'r+');
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+    }
+  } catch (err) {
+    // Ignore sync errors, write should still be committed
+  }
   console.warn(`⚠️  Invalid KEP message: ${reason}`, logEntry);
 }
 
@@ -96,9 +141,11 @@ export function validateTimestamp(messageTimestamp, maxAge = 120000) {
  * Generates unique message ID
  * @param {string} sessionId - Session identifier
  * @param {number} seq - Sequence number
+ * @param {number} timestamp - Message timestamp (optional, defaults to current time)
  * @returns {string} Message ID
  */
-export function generateMessageId(sessionId, seq) {
-  return `${sessionId}:${seq}:${Date.now()}`;
+export function generateMessageId(sessionId, seq, timestamp = null) {
+  const ts = timestamp || Date.now();
+  return `${sessionId}:${seq}:${ts}`;
 }
 

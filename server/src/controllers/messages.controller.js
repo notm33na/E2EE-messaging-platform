@@ -35,8 +35,8 @@ export async function relayMessage(req, res, next) {
       });
     }
 
-    // Generate message ID
-    const messageId = generateMessageId(envelope.sessionId, envelope.seq);
+    // Generate message ID using the message's timestamp
+    const messageId = generateMessageId(envelope.sessionId, envelope.seq, envelope.timestamp);
 
     // Store metadata
     const messageMeta = new MessageMeta({

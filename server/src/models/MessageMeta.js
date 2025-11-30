@@ -65,5 +65,8 @@ messageMetaSchema.index({ receiver: 1, delivered: 1 });
 messageMetaSchema.index({ sessionId: 1, seq: 1 });
 messageMetaSchema.index({ sender: 1, createdAt: -1 });
 
+// Compound unique index to prevent replay attacks (same sessionId + seq + timestamp)
+messageMetaSchema.index({ sessionId: 1, seq: 1, timestamp: 1 }, { unique: true });
+
 export const MessageMeta = mongoose.model('MessageMeta', messageMetaSchema);
 

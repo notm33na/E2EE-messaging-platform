@@ -13,6 +13,14 @@ class UserService {
    * @returns {Promise<Object>} Created user object (sanitized)
    */
   async createUser(email, password) {
+    // Check if user already exists
+    const existingUser = await this.getUserByEmail(email);
+    if (existingUser) {
+      const error = new Error('User with this email already exists');
+      error.name = 'DuplicateUserError';
+      throw error;
+    }
+
     // Hash password with bcrypt (10 rounds)
     const passwordHash = await bcrypt.hash(password, 10);
 
@@ -22,7 +30,17 @@ class UserService {
       isActive: true
     });
 
-    await user.save();
+    try {
+      await user.save();
+    } catch (error) {
+      // Handle duplicate key error from MongoDB
+      if (error.code === 11000) {
+        const duplicateError = new Error('User with this email already exists');
+        duplicateError.name = 'DuplicateUserError';
+        throw duplicateError;
+      }
+      throw error;
+    }
     return this.safeUser(user);
   }
 
@@ -126,13 +144,17 @@ class UserService {
   }
 
   /**
-   * Verifies a password against stored hash
+   * Verifies a password for a user by email
+   * @param {string} email - User email
    * @param {string} password - Plain text password
-   * @param {string} passwordHash - Stored password hash
    * @returns {Promise<boolean>} True if password matches
    */
-  async verifyPassword(password, passwordHash) {
-    return await bcrypt.compare(password, passwordHash);
+  async verifyPassword(email, password) {
+    const user = await this.getUserByEmail(email, true);
+    if (!user || !user.passwordHash) {
+      return false;
+    }
+    return await bcrypt.compare(password, user.passwordHash);
   }
 
   /**

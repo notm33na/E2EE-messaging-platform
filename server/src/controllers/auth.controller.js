@@ -1,6 +1,7 @@
 import { validationResult } from 'express-validator';
 import { userService } from '../services/user.service.js';
 import { generateAccessToken, generateRefreshToken, verifyToken } from '../utils/jwt.js';
+import { logAuthenticationAttempt } from '../utils/attackLogging.js';
 
 /**
  * Register a new user
@@ -84,6 +85,7 @@ export async function login(req, res, next) {
     // Get user with password hash
     const user = await userService.getUserByEmail(email, true);
     if (!user) {
+      logAuthenticationAttempt(null, false, 'User not found');
       return res.status(401).json({
         success: false,
         error: 'Invalid credentials',
@@ -93,6 +95,7 @@ export async function login(req, res, next) {
 
     // Check if account is active
     if (!user.isActive) {
+      logAuthenticationAttempt(user._id.toString(), false, 'Account deactivated');
       return res.status(403).json({
         success: false,
         error: 'Account deactivated',
@@ -101,18 +104,19 @@ export async function login(req, res, next) {
     }
 
     // Verify password
-    const isValidPassword = await userService.verifyPassword(
-      password,
-      user.passwordHash
-    );
+    const isValidPassword = await userService.verifyPassword(email, password);
 
     if (!isValidPassword) {
+      logAuthenticationAttempt(user._id.toString(), false, 'Invalid password');
       return res.status(401).json({
         success: false,
         error: 'Invalid credentials',
         message: 'Email or password is incorrect'
       });
     }
+
+    // Log successful authentication
+    logAuthenticationAttempt(user._id.toString(), true, 'Login successful');
 
     // Update last login
     await userService.updateLastLogin(user._id.toString());

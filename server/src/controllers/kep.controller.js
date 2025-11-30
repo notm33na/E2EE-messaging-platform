@@ -43,8 +43,8 @@ export async function sendKEPMessage(req, res, next) {
       });
     }
 
-    // Generate message ID
-    const messageId = generateMessageId(sessionId, seq);
+    // Generate message ID using the message's timestamp
+    const messageId = generateMessageId(sessionId, seq, timestamp);
 
     // Store message metadata
     const kepMessage = new KEPMessage({

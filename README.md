@@ -766,17 +766,15 @@ MongoDB Atlas
 
 ### 1. Environment Configuration
 
-Copy the environment example file and configure your variables:
-
-```bash
-# From project root
-cp env.example .env
-```
+Create a `.env` file in the project root with your configuration:
 
 Edit `.env` and add your MongoDB Atlas connection string:
 
 ```env
-MONGO_URI=mongodb+srv://username:password@cluster.mongodb.net/dbname?retryWrites=true&w=majority
+# MongoDB Atlas Connection String
+# Replace <db_password> with your actual password
+MONGO_URI=mongodb+srv://7883:<db_password>@infosec.eyjxobx.mongodb.net/infosec?retryWrites=true&w=majority&appName=InfoSec
+
 PORT_HTTP=8080
 PORT_HTTPS=8443
 NODE_ENV=development
@@ -784,9 +782,14 @@ NODE_ENV=development
 # Token Expiry (optional, defaults: 15m for access, 7d for refresh)
 ACCESS_TOKEN_EXPIRY=15m
 REFRESH_TOKEN_EXPIRY=7d
-
-# AI Engine removed - not required for E2EE cryptography system
 ```
+
+**Note**: The connection string includes the database name `infosec`. The system will automatically create the following collections as needed:
+
+- `users` - User accounts and authentication data
+- `publickeys` - Public identity keys for key exchange
+- `kepmessages` - Key exchange protocol message metadata
+- `messagemetas` - Encrypted message metadata
 
 ### 2. Generate ECC Keys
 

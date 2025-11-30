@@ -52,8 +52,7 @@ const userSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Index for faster lookups
-userSchema.index({ email: 1 });
+// Index for refresh token lookups (email index is automatically created by unique: true)
 userSchema.index({ 'refreshTokens.token': 1 });
 
 export const User = mongoose.model('User', userSchema);

@@ -40,7 +40,22 @@ function writeLog(filename, event) {
     ...event
   }) + '\n';
   
+  // Ensure directory exists
+  if (!fs.existsSync(logsDir)) {
+    fs.mkdirSync(logsDir, { recursive: true });
+  }
+  
   fs.appendFileSync(logPath, logLine, 'utf8');
+  // Force sync to ensure write is committed (if file exists)
+  try {
+    if (fs.existsSync(logPath)) {
+      const fd = fs.openSync(logPath, 'r+');
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+    }
+  } catch (err) {
+    // Ignore sync errors, write should still be committed
+  }
 }
 
 /**

@@ -4,6 +4,8 @@ import https from 'https';
 import dotenv from 'dotenv';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { connectDatabase, closeDatabase } from './config/database.js';
 import { setupSecurityMiddleware } from './middleware/security.js';
 import { generateSelfSignedCert } from './utils/https-cert.js';
@@ -16,8 +18,10 @@ import kepRouter from './routes/kep.routes.js';
 import messagesRouter from './routes/messages.routes.js';
 // AI engine removed - not required for E2EE cryptography system
 
-// Load environment variables
-dotenv.config();
+// Load environment variables from project root
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 const app = express();
 const PORT_HTTP = parseInt(process.env.PORT_HTTP || '8080', 10);

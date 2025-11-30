@@ -341,8 +341,8 @@ export function initializeWebSocket(httpsServer) {
           return;
         }
 
-        // Generate message ID
-        const messageId = generateMessageId(sessionId, seq);
+        // Generate message ID using the message's timestamp
+        const messageId = generateMessageId(sessionId, seq, timestamp);
 
         // Store message metadata
         const messageMeta = new MessageMeta({
