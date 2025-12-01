@@ -25,6 +25,21 @@ export async function verifyTokenMiddleware(req, res, next) {
         return next();
       }
 
+      // Verify token binding (IP/user-agent) if present
+      if (decoded.binding) {
+        const crypto = require('crypto');
+        const clientIP = req.ip || req.socket.remoteAddress || '';
+        const clientUserAgent = req.headers['user-agent'] || '';
+        const bindingString = `${clientIP}|${clientUserAgent}`;
+        const expectedBinding = crypto.createHash('sha256').update(bindingString).digest('hex').substring(0, 16);
+        
+        if (decoded.binding !== expectedBinding) {
+          // Token binding mismatch - possible token theft/replay
+          req.user = null;
+          return next();
+        }
+      }
+
       // Get user from database
       const user = await userService.getUserById(decoded.userId);
 

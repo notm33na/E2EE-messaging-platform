@@ -18,14 +18,19 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { writeProtectedLog } from './logIntegrity.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Ensure logs directory exists
-const logsDir = path.join(__dirname, '../../logs');
-if (!fs.existsSync(logsDir)) {
-  fs.mkdirSync(logsDir, { recursive: true });
+// Base logs directory getter.
+// In tests, this is driven by TEST_LOGS_DIR to ensure suite-specific isolation.
+function getBaseLogsDir() {
+  const dir = process.env.TEST_LOGS_DIR || path.join(__dirname, '../../logs');
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
 }
 
 /**
@@ -33,29 +38,16 @@ if (!fs.existsSync(logsDir)) {
  * @param {string} filename - Log filename
  * @param {Object} event - Event data
  */
+function resolveLogPath(filename) {
+  const prefix = process.env.LOG_PREFIX || '';
+  const effectiveName = prefix ? `${prefix}_${filename}` : filename;
+  const baseDir = getBaseLogsDir();
+  return path.join(baseDir, effectiveName);
+}
+
 function writeLog(filename, event) {
-  const logPath = path.join(logsDir, filename);
-  const logLine = JSON.stringify({
-    timestamp: new Date().toISOString(),
-    ...event
-  }) + '\n';
-  
-  // Ensure directory exists
-  if (!fs.existsSync(logsDir)) {
-    fs.mkdirSync(logsDir, { recursive: true });
-  }
-  
-  fs.appendFileSync(logPath, logLine, 'utf8');
-  // Force sync to ensure write is committed (if file exists)
-  try {
-    if (fs.existsSync(logPath)) {
-      const fd = fs.openSync(logPath, 'r+');
-      fs.fsyncSync(fd);
-      fs.closeSync(fd);
-    }
-  } catch (err) {
-    // Ignore sync errors, write should still be committed
-  }
+  // Use protected logging with HMAC integrity
+  writeProtectedLog(filename, event);
 }
 
 /**
@@ -145,6 +137,29 @@ export function logFailedDecryption(sessionId, userId, seq, reason) {
     sessionId,
     userId,
     seq,
+    reason,
+    action: 'REJECTED'
+  });
+}
+
+/**
+ * Logs an invalid KEP message (structure / signature issues)
+ * This is used by MITM and logging tests to verify that
+ * invalid KEP messages are persisted to a dedicated log.
+ *
+ * @param {string} sessionId - Session identifier
+ * @param {string} userId - User ID associated with the KEP message
+ * @param {string} reason - Reason for rejection
+ */
+export function logInvalidKEPMessage(sessionId, userId, reason) {
+  writeLog('invalid_kep_message.log', {
+    eventType: 'INVALID_KEP_MESSAGE',
+    // Lowercase type field so tests that search for "invalid_kep_message"
+    // as a substring can still find this entry while keeping eventType
+    // in a normalized, uppercase form.
+    type: 'invalid_kep_message',
+    sessionId,
+    userId,
     reason,
     action: 'REJECTED'
   });

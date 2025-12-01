@@ -3,12 +3,7 @@
  * Provides test database connection and helper functions
  */
 
-import mongoose from 'mongoose';
-import { connectDatabase, closeDatabase } from '../src/config/database.js';
-import { User } from '../src/models/User.js';
-import { PublicKey } from '../src/models/PublicKey.js';
-import { KEPMessage } from '../src/models/KEPMessage.js';
-import { MessageMeta } from '../src/models/MessageMeta.js';
+import { setupTestDB, cleanTestDB, closeTestDB, getTestDBName } from './utils/createTestDB.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -16,57 +11,9 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Test database URI (use test database)
-const TEST_DB_URI = process.env.TEST_MONGO_URI || 'mongodb://localhost:27017/infosec_test';
-
-/**
- * Connect to test database
- */
-export async function setupTestDB() {
-  try {
-    await mongoose.connect(TEST_DB_URI, {
-      serverSelectionTimeoutMS: 5000,
-    });
-    console.log('✓ Connected to test database');
-  } catch (error) {
-    console.error('Failed to connect to test database:', error.message);
-    throw error;
-  }
-}
-
-/**
- * Clean test database
- */
-export async function cleanTestDB() {
-  try {
-    // Delete all documents
-    await User.deleteMany({});
-    await PublicKey.deleteMany({});
-    await KEPMessage.deleteMany({});
-    await MessageMeta.deleteMany({});
-    
-    // Drop indexes to prevent duplicate key errors from stale indexes
-    // Note: We don't drop all indexes, just ensure collections are clean
-    // Mongoose will recreate indexes on next connection if needed
-    
-    console.log('✓ Test database cleaned');
-  } catch (error) {
-    console.error('Failed to clean test database:', error);
-    throw error;
-  }
-}
-
-/**
- * Close test database connection
- */
-export async function closeTestDB() {
-  try {
-    await mongoose.connection.close();
-    console.log('✓ Test database connection closed');
-  } catch (error) {
-    console.error('Error closing test database:', error);
-  }
-}
+// Re-export DB helpers from the isolated test DB utility so all suites
+// use per-suite databases instead of a shared global connection.
+export { setupTestDB, cleanTestDB, closeTestDB, getTestDBName };
 
 /**
  * Clear test log files

@@ -199,8 +199,8 @@ describe('File Upload Encryption Tests', () => {
       const stored = await MessageMeta.findOne({ messageId: 'chunk-4' });
       const storedObj = stored.toObject();
 
-      // Only metadata fields should exist
-      const allowedFields = ['_id', 'messageId', 'sessionId', 'sender', 'receiver', 'type', 'timestamp', 'seq', 'meta', 'delivered', 'deliveredAt', 'createdAt', 'updatedAt', '__v'];
+      // Only metadata fields should exist (including metadataHash for integrity)
+      const allowedFields = ['_id', 'messageId', 'sessionId', 'sender', 'receiver', 'type', 'timestamp', 'seq', 'meta', 'metadataHash', 'delivered', 'deliveredAt', 'createdAt', 'updatedAt', '__v'];
       const actualFields = Object.keys(storedObj);
       
       actualFields.forEach(field => {

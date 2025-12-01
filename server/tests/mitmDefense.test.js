@@ -3,29 +3,60 @@
  * Tests signature verification and MITM attack prevention
  */
 
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { PublicKey } from '../src/models/PublicKey.js';
 import { KEPMessage } from '../src/models/KEPMessage.js';
 import { logInvalidSignature as logInvalidSignatureReplay, logInvalidKEPMessage } from '../src/utils/replayProtection.js';
 import { logInvalidSignature } from '../src/utils/attackLogging.js';
-import { setupTestDB, cleanTestDB, closeTestDB, generateTestJWK, generateTestUser, readLogFile, clearTestLogs } from './setup.js';
+import { setupTestDB, cleanTestDB, closeTestDB, generateTestJWK, generateTestUser } from './setup.js';
 import { userService } from '../src/services/user.service.js';
 import crypto from 'crypto';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Suite-specific logs directory for MITM tests.
+const suiteLogsDir = path.join(__dirname, 'logs', `mitm-${process.pid}-${Date.now()}`);
+
+function ensureSuiteLogsDir() {
+  if (fs.existsSync(suiteLogsDir)) {
+    fs.rmSync(suiteLogsDir, { recursive: true, force: true });
+  }
+  fs.mkdirSync(suiteLogsDir, { recursive: true });
+}
+
+function readLogFile(filename) {
+  const baseDir = process.env.TEST_LOGS_DIR || suiteLogsDir;
+  const logPath = path.join(baseDir, filename);
+  if (fs.existsSync(logPath)) {
+    return fs.readFileSync(logPath, 'utf8');
+  }
+  return '';
+}
 
 describe('MITM Defense Tests', () => {
   let testUser1, testUser2;
 
   beforeAll(async () => {
+    // Use suite-specific log directory so MITM logging is isolated.
+    process.env.TEST_LOGS_DIR = suiteLogsDir;
+    ensureSuiteLogsDir();
     await setupTestDB();
-    clearTestLogs();
   });
 
   afterAll(async () => {
     await closeTestDB();
+    if (fs.existsSync(suiteLogsDir)) {
+      fs.rmSync(suiteLogsDir, { recursive: true, force: true });
+    }
+    delete process.env.TEST_LOGS_DIR;
   });
 
   beforeEach(async () => {
     await cleanTestDB();
-    clearTestLogs();
+    ensureSuiteLogsDir();
     const userData1 = generateTestUser();
     const userData2 = generateTestUser();
     testUser1 = await userService.createUser(userData1.email, userData1.password);
@@ -176,7 +207,10 @@ describe('MITM Defense Tests', () => {
       const logLines = logContent.trim().split('\n').filter(l => l);
       expect(logLines.length).toBeGreaterThan(0);
       
-      const lastLog = JSON.parse(logLines[logLines.length - 1]);
+      // Parse log entry with HMAC (format: JSON|HMAC:...)
+      const lastLine = logLines[logLines.length - 1];
+      const logParts = lastLine.split('|HMAC:');
+      const lastLog = JSON.parse(logParts[0]); // Extract JSON part before HMAC
 
       expect(lastLog.userId).toBe(userId.toString());
       expect(lastLog.sessionId).toBe(sessionId);

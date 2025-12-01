@@ -78,13 +78,15 @@ describe('Metadata Storage Tests', () => {
       });
       await messageMeta.save();
 
-      const stored = await MessageMeta.findOne({ messageId: 'msg-123' });
+      // Explicitly select fields that are marked select: false
+      const stored = await MessageMeta.findOne({ messageId: 'msg-123' }).select('+sender +receiver');
       expect(stored.messageId).toBeDefined();
       expect(stored.sessionId).toBeDefined();
       expect(stored.sender).toBeDefined();
       expect(stored.receiver).toBeDefined();
       expect(stored.timestamp).toBeDefined();
       expect(stored.seq).toBeDefined();
+      expect(stored.metadataHash).toBeDefined(); // Integrity hash added
     });
   });
 

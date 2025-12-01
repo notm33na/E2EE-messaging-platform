@@ -15,10 +15,18 @@ import { getRecvKey } from './sessionManager.js';
  * @param {string} sessionId - Session identifier
  * @returns {Promise<{blob: Blob, filename: string, mimetype: string}>}
  */
-export async function decryptFile(metaEnvelope, chunkEnvelopes, sessionId) {
+export async function decryptFile(metaEnvelope, chunkEnvelopes, sessionId, userId = null) {
   try {
-    // 1. Get receive key
-    const recvKey = await getRecvKey(sessionId);
+    // 1. Get receive key (with userId for encrypted key access)
+    // Load session first to get userId if not provided
+    const { loadSession } = await import('./sessionManager.js');
+    if (!userId) {
+      const session = await loadSession(sessionId, null);
+      if (session) {
+        userId = session.userId;
+      }
+    }
+    const recvKey = await getRecvKey(sessionId, userId);
 
     // 2. Decrypt metadata
     const metaCiphertext = base64ToArrayBuffer(metaEnvelope.ciphertext);
@@ -74,6 +82,14 @@ export async function decryptFile(metaEnvelope, chunkEnvelopes, sessionId) {
 
     // 7. Create Blob
     const blob = new Blob([combinedBuffer], { type: mimetype });
+
+    // 8. Clear decrypted chunks from memory after blob creation
+    const { clearPlaintextAfterDecryption } = await import('../utils/memorySecurity.js');
+    for (const chunk of decryptedChunks) {
+      clearPlaintextAfterDecryption(chunk);
+    }
+    clearPlaintextAfterDecryption(combinedBuffer);
+    clearPlaintextAfterDecryption(decryptedMeta);
 
     console.log(`✓ File decrypted: ${filename} (${totalChunks} chunks)`);
 

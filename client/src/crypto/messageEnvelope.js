@@ -7,23 +7,24 @@
 
 import { generateNonce, generateTimestamp } from './messages.js';
 import { sequenceManager } from './messages.js';
-import { arrayBufferToBase64 } from './signatures.js';
+import { arrayBufferToBase64, signData } from './signatures.js';
 
 /**
- * Builds a text message envelope
+ * Builds a text message envelope with optional identity signature for non-repudiation
  * @param {string} sessionId - Session identifier
  * @param {string} sender - Sender user ID
  * @param {string} receiver - Receiver user ID
  * @param {ArrayBuffer} ciphertext - Encrypted message content
  * @param {Uint8Array} iv - Initialization vector (96 bits)
  * @param {ArrayBuffer} authTag - Authentication tag
- * @returns {Object} Message envelope
+ * @param {CryptoKey} identityPrivateKey - Optional identity private key for signing
+ * @returns {Promise<Object>} Message envelope with optional signature
  */
-export function buildTextMessageEnvelope(sessionId, sender, receiver, ciphertext, iv, authTag) {
+export async function buildTextMessageEnvelope(sessionId, sender, receiver, ciphertext, iv, authTag, identityPrivateKey = null) {
   const { timestamp, nonce } = generateTimestamp();
   const seq = sequenceManager.getNextSequence(sessionId);
 
-  return {
+  const envelope = {
     type: 'MSG',
     sessionId,
     sender,
@@ -35,6 +36,24 @@ export function buildTextMessageEnvelope(sessionId, sender, receiver, ciphertext
     seq,
     nonce: arrayBufferToBase64(nonce)
   };
+
+  // Add identity signature for non-repudiation if identity key provided
+  if (identityPrivateKey) {
+    const signaturePayload = JSON.stringify({
+      sessionId,
+      sender,
+      receiver,
+      timestamp,
+      seq,
+      ciphertextHash: arrayBufferToBase64(ciphertext.slice(0, Math.min(32, ciphertext.byteLength))) // Hash of first 32 bytes
+    });
+    const encoder = new TextEncoder();
+    const payloadBuffer = encoder.encode(signaturePayload);
+    const signature = await signData(identityPrivateKey, payloadBuffer);
+    envelope.identitySignature = arrayBufferToBase64(signature);
+  }
+
+  return envelope;
 }
 
 /**

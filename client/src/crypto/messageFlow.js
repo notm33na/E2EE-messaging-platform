@@ -11,6 +11,7 @@ import { buildTextMessageEnvelope } from './messageEnvelope.js';
 import { validateEnvelopeStructure } from './messageEnvelope.js';
 import { base64ToArrayBuffer } from './signatures.js';
 import { sequenceManager, generateTimestamp } from './messages.js';
+import { clearPlaintextAfterEncryption, clearPlaintextAfterDecryption } from '../utils/memorySecurity.js';
 
 /**
  * Validates timestamp freshness
@@ -31,20 +32,35 @@ function validateTimestamp(messageTimestamp, maxAge = 120000) {
  * @param {Function} socketEmit - Socket.IO emit function
  * @returns {Promise<Object>} Sent envelope
  */
-export async function sendEncryptedMessage(sessionId, plaintext, socketEmit) {
+export async function sendEncryptedMessage(sessionId, plaintext, socketEmit, userId = null) {
   try {
-    // 1. Load session keys
-    const sendKey = await getSendKey(sessionId);
-    const session = await loadSession(sessionId);
+    // 1. Load session (with userId for encrypted key access)
+    const session = await loadSession(sessionId, userId);
     
     if (!session) {
       throw new Error('Session not found');
     }
+    
+    // Use userId from session if not provided
+    if (!userId) {
+      userId = session.userId;
+    }
+    
+    // 2. Get send key
+    const sendKey = await getSendKey(sessionId, userId);
 
-    // 2. Encrypt plaintext with sendKey
+    // 3. Encrypt plaintext with sendKey
     const { ciphertext, iv, authTag } = await encryptAESGCM(sendKey, plaintext);
 
-    // 3. Build envelope
+    // 3.5. Clear plaintext from memory after encryption
+    if (plaintext instanceof ArrayBuffer) {
+      clearPlaintextAfterEncryption(plaintext);
+    } else if (typeof plaintext === 'string') {
+      // String is immutable, but we can clear any buffer representation
+      clearPlaintextAfterEncryption(plaintext);
+    }
+
+    // 4. Build envelope
     const envelope = buildTextMessageEnvelope(
       sessionId,
       session.userId,
@@ -54,7 +70,7 @@ export async function sendEncryptedMessage(sessionId, plaintext, socketEmit) {
       authTag
     );
 
-    // 4. Send via WebSocket
+    // 5. Send via WebSocket
     socketEmit('msg:send', envelope);
 
     console.log(`✓ Encrypted message sent (seq: ${envelope.seq})`);
@@ -68,9 +84,10 @@ export async function sendEncryptedMessage(sessionId, plaintext, socketEmit) {
 /**
  * Handles incoming encrypted message
  * @param {Object} envelope - Message envelope
+ * @param {string} userId - User ID (for encrypted key access)
  * @returns {Promise<{valid: boolean, plaintext?: string, error?: string}>}
  */
-export async function handleIncomingMessage(envelope) {
+export async function handleIncomingMessage(envelope, userId = null) {
   try {
     // 1. Validate envelope structure
     const structureCheck = validateEnvelopeStructure(envelope);
@@ -99,13 +116,18 @@ export async function handleIncomingMessage(envelope) {
       return { valid: false, error };
     }
 
-    // 4. Load session and receive key
-    const session = await loadSession(envelope.sessionId);
+    // 4. Load session and receive key (with userId for encrypted key access)
+    const session = await loadSession(envelope.sessionId, userId);
     if (!session) {
       return { valid: false, error: 'Session not found' };
     }
 
-    const recvKey = await getRecvKey(envelope.sessionId);
+    // Use userId from session if not provided
+    if (!userId) {
+      userId = session.userId;
+    }
+
+    const recvKey = await getRecvKey(envelope.sessionId, userId);
 
     // 5. Convert base64 fields to ArrayBuffer
     const ciphertext = base64ToArrayBuffer(envelope.ciphertext);
@@ -114,24 +136,35 @@ export async function handleIncomingMessage(envelope) {
 
     // 6. Decrypt using recvKey
     let plaintext;
-    if (envelope.type === 'MSG') {
-      plaintext = await decryptAESGCMToString(recvKey, iv, ciphertext, authTag);
-    } else {
-      // For file chunks, return ArrayBuffer
-      plaintext = await decryptAESGCM(recvKey, iv, ciphertext, authTag);
-    }
+    try {
+      if (envelope.type === 'MSG') {
+        plaintext = await decryptAESGCMToString(recvKey, iv, ciphertext, authTag);
+      } else {
+        // For file chunks, return ArrayBuffer
+        plaintext = await decryptAESGCM(recvKey, iv, ciphertext, authTag);
+      }
 
-    // 7. Update session sequence
-    await updateSessionSeq(envelope.sessionId, envelope.seq);
+      // 7. Update session sequence (with userId for encrypted storage)
+      await updateSessionSeq(envelope.sessionId, envelope.seq, userId);
 
-    console.log(`✓ Message decrypted successfully (seq: ${envelope.seq})`);
+      console.log(`✓ Message decrypted successfully (seq: ${envelope.seq})`);
 
-    return {
-      valid: true,
-      plaintext,
-      envelope
-    };
-  } catch (error) {
+      // Note: Plaintext is returned to caller - they should clear it after use
+      // Memory clearing is best-effort in JavaScript (strings are immutable)
+      // For ArrayBuffer plaintext, we clear it after a short delay
+      if (plaintext instanceof ArrayBuffer) {
+        // Schedule memory clearing after a short delay
+        setTimeout(() => {
+          clearPlaintextAfterDecryption(plaintext);
+        }, 100);
+      }
+      
+      return {
+        valid: true,
+        plaintext,
+        envelope
+      };
+    } catch (error) {
     console.error('Failed to handle incoming message:', error);
     logInvalidEnvelope(envelope.sessionId, envelope.seq, error.message);
     

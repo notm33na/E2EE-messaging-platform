@@ -5,11 +5,22 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const LOGS_DIR = path.join(__dirname, '../../logs');
+// Base logs directory getter. Tests can override this with TEST_LOGS_DIR to get
+// suite-specific log isolation.
+function getLogsDir() {
+  const dir =
+    process.env.TEST_LOGS_DIR || path.join(__dirname, '../../logs');
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
 
-// Ensure logs directory exists
-if (!fs.existsSync(LOGS_DIR)) {
-  fs.mkdirSync(LOGS_DIR, { recursive: true });
+function resolveLogPath(filename) {
+  const prefix = process.env.LOG_PREFIX || '';
+  const effectiveName = prefix ? `${prefix}_${filename}` : filename;
+  const baseDir = getLogsDir();
+  return path.join(baseDir, effectiveName);
 }
 
 /**
@@ -30,11 +41,12 @@ export function logMessageMetadataAccess(userId, sessionId, action, metadata = {
   };
 
   const logLine = JSON.stringify(logEntry) + '\n';
-  const logPath = path.join(LOGS_DIR, 'message_metadata_access.log');
+  const logPath = resolveLogPath('message_metadata_access.log');
 
   // Ensure directory exists
-  if (!fs.existsSync(LOGS_DIR)) {
-    fs.mkdirSync(LOGS_DIR, { recursive: true });
+  const baseDir = getLogsDir();
+  if (!fs.existsSync(baseDir)) {
+    fs.mkdirSync(baseDir, { recursive: true });
   }
 
   fs.appendFileSync(logPath, logLine, { flag: 'a' });
@@ -68,11 +80,12 @@ export function logMessageForwarding(senderId, receiverId, sessionId, messageTyp
   };
 
   const logLine = JSON.stringify(logEntry) + '\n';
-  const logPath = path.join(LOGS_DIR, 'msg_forwarding.log');
+  const logPath = resolveLogPath('msg_forwarding.log');
 
   // Ensure directory exists
-  if (!fs.existsSync(LOGS_DIR)) {
-    fs.mkdirSync(LOGS_DIR, { recursive: true });
+  const baseDir = getLogsDir();
+  if (!fs.existsSync(baseDir)) {
+    fs.mkdirSync(baseDir, { recursive: true });
   }
 
   fs.appendFileSync(logPath, logLine, { flag: 'a' });
@@ -106,11 +119,12 @@ export function logFileChunkForwarding(senderId, receiverId, sessionId, chunkInd
   };
 
   const logLine = JSON.stringify(logEntry) + '\n';
-  const logPath = path.join(LOGS_DIR, 'file_chunk_forwarding.log');
+  const logPath = resolveLogPath('file_chunk_forwarding.log');
 
   // Ensure directory exists
-  if (!fs.existsSync(LOGS_DIR)) {
-    fs.mkdirSync(LOGS_DIR, { recursive: true });
+  const baseDir = getLogsDir();
+  if (!fs.existsSync(baseDir)) {
+    fs.mkdirSync(baseDir, { recursive: true });
   }
 
   fs.appendFileSync(logPath, logLine, { flag: 'a' });
@@ -144,11 +158,12 @@ export function logReplayDetected(userId, sessionId, seq, reason) {
   };
 
   const logLine = JSON.stringify(logEntry) + '\n';
-  const logPath = path.join(LOGS_DIR, 'replay_detected.log');
+  const logPath = resolveLogPath('replay_detected.log');
 
   // Ensure directory exists
-  if (!fs.existsSync(LOGS_DIR)) {
-    fs.mkdirSync(LOGS_DIR, { recursive: true });
+  const baseDir = getLogsDir();
+  if (!fs.existsSync(baseDir)) {
+    fs.mkdirSync(baseDir, { recursive: true });
   }
 
   fs.appendFileSync(logPath, logLine, { flag: 'a' });

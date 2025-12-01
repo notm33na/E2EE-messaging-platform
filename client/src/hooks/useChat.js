@@ -4,7 +4,11 @@ import { sendEncryptedMessage } from '../crypto/messageFlow.js';
 import { handleIncomingMessage } from '../crypto/messageFlow.js';
 import { encryptFile } from '../crypto/fileEncryption.js';
 import { decryptFile } from '../crypto/fileDecryption.js';
-import { loadSession } from '../crypto/sessionManager.js';
+import {
+  loadSession,
+  setReplayDetectionCallback,
+  setInvalidSignatureCallback,
+} from '../crypto/sessionManager.js';
 
 /**
  * Custom hook for chat functionality
@@ -17,6 +21,7 @@ export function useChat(sessionId, socket) {
   const [messages, setMessages] = useState([]);
   const [files, setFiles] = useState([]); // Pending file reconstructions
   const [isDecrypting, setIsDecrypting] = useState(false);
+  const [securityEvents, setSecurityEvents] = useState([]);
   const fileChunksRef = useRef(new Map()); // sessionId -> {meta, chunks}
 
   // Handle incoming messages
@@ -110,6 +115,43 @@ export function useChat(sessionId, socket) {
     };
   }, [socket, sessionId]);
 
+  // Wire replay/invalid-signature detection into UI-level security events
+  useEffect(() => {
+    // Replay detection: sequence/timestamp violations
+    setReplayDetectionCallback((sid, message) => {
+      if (!sid || sid !== sessionId) return;
+
+      setSecurityEvents((prev) => [
+        ...prev,
+        {
+          id: `replay-${sid}-${message.seq || Date.now()}`,
+          type: 'replay',
+          sessionId: sid,
+          reason: message.reason || 'Replay attempt detected',
+          timestamp: Date.now(),
+        },
+      ]);
+    });
+
+    // Invalid signature / integrity failures
+    setInvalidSignatureCallback((sid, message) => {
+      if (!sid || sid !== sessionId) return;
+
+      setSecurityEvents((prev) => [
+        ...prev,
+        {
+          id: `invalid-${sid}-${message.seq || Date.now()}`,
+          type: 'integrity',
+          sessionId: sid,
+          reason: message.reason || 'Message integrity check failed',
+          timestamp: Date.now(),
+        },
+      ]);
+    });
+
+    // No explicit teardown needed – callbacks are overwritten when sessionId changes
+  }, [sessionId]);
+
   /**
    * Sends an encrypted text message
    */
@@ -181,7 +223,8 @@ export function useChat(sessionId, socket) {
     files,
     isDecrypting,
     sendMessage,
-    sendFile
+    sendFile,
+    securityEvents,
   };
 }
 

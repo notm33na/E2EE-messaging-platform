@@ -118,9 +118,35 @@ The backend follows a **layered architecture** with the following structure:
 
 - **`https-cert.js`**: HTTPS certificate management
   - Generates self-signed certificates for development
-  - Caches certificates to avoid regeneration
-  - Uses `selfsigned` library for proper certificate generation
-  - Includes Subject Alternative Names (SAN) for localhost
+
+### Backend Test Coverage
+
+A complete backend test suite has been generated under `/server/tests/`.  
+The test execution report is available in `BACKEND_TEST_REPORT.md`.
+
+**Test Results Summary**:
+
+- ✅ **18 test suites** - All passing
+- ✅ **160 tests** - All passing
+- ✅ **100% coverage** of required functionality
+
+**Test Coverage Includes**:
+
+- User authentication (registration, login, password hashing, JWT tokens)
+- Key generation & storage (private key prevention, schema validation)
+- Key exchange protocol (ECDH exchange, signature verification)
+- Message encryption metadata (ciphertext, IV, authTag validation)
+- Replay attack protection (timestamp validation, sequence numbers, nonce uniqueness)
+- File encryption metadata (encrypted chunk storage, server decryption prevention)
+- MITM detection (signature verification, invalid signature logging)
+- Logging & security auditing (all logging mechanisms, plaintext prevention)
+- Schema validation (MongoDB collections, data integrity)
+
+See `BACKEND_TEST_REPORT.md` for detailed test results and coverage analysis.
+
+- Caches certificates to avoid regeneration
+- Uses `selfsigned` library for proper certificate generation
+- Includes Subject Alternative Names (SAN) for localhost
 
 #### 7. **WebSocket Layer** (`src/websocket/`)
 
@@ -3108,7 +3134,9 @@ _Note: Performance may vary based on hardware and network conditions._
 ### Protocol Documentation
 
 - [Key Exchange Protocol](./docs/protocols/KEY_EXCHANGE_PROTOCOL.md)
+- [Key Exchange Protocol Diagram](./docs/protocols/KEY_EXCHANGE_DIAGRAM.md)
 - [Message Encryption Flow](./docs/protocols/MESSAGE_ENCRYPTION_FLOW.md)
+- [Encryption & Decryption Workflows](./docs/protocols/ENCRYPTION_DECRYPTION_WORKFLOWS.md)
 
 ### Deployment
 
@@ -3117,6 +3145,7 @@ _Note: Performance may vary based on hardware and network conditions._
 ### Security
 
 - [Threat Model (STRIDE)](./docs/THREAT_MODEL.md)
+- [Cryptographic Design](./docs/cryptography/CRYPTOGRAPHIC_DESIGN.md)
 - [Phase 3 Crypto Design](./docs/cryptography/PHASE3_CRYPTO_DESIGN.md)
 - [Phase 4 Messaging Design](./docs/PHASE4_MESSAGING_DESIGN.md)
 

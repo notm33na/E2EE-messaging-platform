@@ -1,5 +1,7 @@
 import { PublicKey } from '../models/PublicKey.js';
 import { userService } from '../services/user.service.js';
+import crypto from 'crypto';
+import { logEvent } from '../utils/attackLogging.js';
 
 /**
  * Upload public identity key
@@ -37,6 +39,29 @@ export async function uploadPublicKey(req, res, next) {
         success: false,
         error: 'Only ECC P-256 keys are supported'
       });
+    }
+
+    // Check if public key already exists and verify integrity
+    const existingKey = await PublicKey.findOne({ userId: req.user.id });
+    if (existingKey) {
+      // Verify key hasn't been tampered with by checking hash
+      const keyString = JSON.stringify(existingKey.publicIdentityKeyJWK, Object.keys(existingKey.publicIdentityKeyJWK).sort());
+      const currentHash = crypto.createHash('sha256').update(keyString).digest('hex');
+      
+      if (currentHash !== existingKey.keyHash) {
+        // Key has been tampered with - log security event
+        logEvent('PUBLIC_KEY_TAMPER_DETECTED', existingKey.userId.toString(), 'Public key integrity check failed', {
+          userId: existingKey.userId.toString(),
+          expectedHash: existingKey.keyHash,
+          actualHash: currentHash
+        });
+        
+        return res.status(409).json({
+          success: false,
+          error: 'Public key integrity violation detected',
+          message: 'Existing public key has been modified. Please contact support.'
+        });
+      }
     }
 
     // Upsert public key
@@ -87,6 +112,25 @@ export async function getPublicKey(req, res, next) {
       return res.status(404).json({
         success: false,
         error: 'Public key not found for this user'
+      });
+    }
+
+    // Verify key integrity before returning
+    const keyString = JSON.stringify(publicKey.publicIdentityKeyJWK, Object.keys(publicKey.publicIdentityKeyJWK).sort());
+    const currentHash = crypto.createHash('sha256').update(keyString).digest('hex');
+    
+    if (currentHash !== publicKey.keyHash) {
+      // Key has been tampered with
+      logEvent('PUBLIC_KEY_TAMPER_DETECTED', userId, 'Public key integrity check failed on retrieval', {
+        userId: userId,
+        expectedHash: publicKey.keyHash,
+        actualHash: currentHash
+      });
+      
+      return res.status(500).json({
+        success: false,
+        error: 'Public key integrity violation',
+        message: 'Public key verification failed. Please contact support.'
       });
     }
 

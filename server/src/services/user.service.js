@@ -13,6 +13,16 @@ class UserService {
    * @returns {Promise<Object>} Created user object (sanitized)
    */
   async createUser(email, password) {
+    // Validate password strength
+    const { validatePassword } = await import('../utils/passwordValidation.js');
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.valid) {
+      const error = new Error(`Password validation failed: ${passwordValidation.errors.join(', ')}`);
+      error.name = 'PasswordValidationError';
+      error.errors = passwordValidation.errors;
+      throw error;
+    }
+
     // Check if user already exists
     const existingUser = await this.getUserByEmail(email);
     if (existingUser) {
@@ -21,8 +31,8 @@ class UserService {
       throw error;
     }
 
-    // Hash password with bcrypt (10 rounds)
-    const passwordHash = await bcrypt.hash(password, 10);
+    // Hash password with bcrypt (12 rounds - increased from 10 for better security)
+    const passwordHash = await bcrypt.hash(password, 12);
 
     const user = new User({
       email,

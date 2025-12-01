@@ -16,7 +16,10 @@ export function Chat() {
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef(null);
 
-  const { messages, files, isDecrypting, sendMessage, sendFile } = useChat(sessionId, socket);
+  const { messages, files, isDecrypting, sendMessage, sendFile, securityEvents } = useChat(
+    sessionId,
+    socket,
+  );
 
   // Initialize WebSocket connection
   useEffect(() => {
@@ -133,6 +136,51 @@ export function Chat() {
       </div>
 
       <div className="chat-messages">
+        {securityEvents && securityEvents.length > 0 && (
+          <>
+            <div className="chat-security-warning">
+              <p className="chat-security-title">Secure channel warning</p>
+              <p className="chat-security-body">
+                {securityEvents[securityEvents.length - 1].type === 'replay'
+                  ? 'Potential replay attack detected. The affected message was blocked and not shown.'
+                  : 'Message integrity verification failed. The affected message was blocked and not shown.'}
+              </p>
+            </div>
+
+            <div className="chat-security-log">
+              <div className="chat-security-log-header">
+                <span className="chat-security-log-title">Security log</span>
+                <span className="chat-security-log-count">
+                  {securityEvents.length} event{securityEvents.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              <ul className="chat-security-log-list">
+                {securityEvents
+                  .slice()
+                  .reverse()
+                  .map((event) => (
+                    <li
+                      key={event.id}
+                      className={`chat-security-log-item chat-security-log-item-${event.type}`}
+                    >
+                      <div className="chat-security-log-main">
+                        <span className="chat-security-log-type">
+                          {event.type === 'replay'
+                            ? 'Replay attack detected'
+                            : 'Integrity check failed'}
+                        </span>
+                        <span className="chat-security-log-time">
+                          {new Date(event.timestamp).toLocaleTimeString()}
+                        </span>
+                      </div>
+                      <div className="chat-security-log-reason">{event.reason}</div>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          </>
+        )}
+
         {messages.map((msg) => (
           <div
             key={msg.id}

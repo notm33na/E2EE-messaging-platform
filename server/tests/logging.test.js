@@ -3,26 +3,65 @@
  * Tests all logging mechanisms and ensures no plaintext in logs
  */
 
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { logReplayAttempt, logInvalidSignature, logKeyExchangeAttempt, logAuthenticationAttempt, logFailedDecryption, logMetadataAccess } from '../src/utils/attackLogging.js';
 import { logMessageMetadataAccess, logMessageForwarding, logFileChunkForwarding, logReplayDetected } from '../src/utils/messageLogging.js';
 import { logInvalidKEPMessage } from '../src/utils/replayProtection.js';
-import { setupTestDB, cleanTestDB, closeTestDB, generateTestUser, readLogFile, clearTestLogs } from './setup.js';
+import { setupTestDB, cleanTestDB, closeTestDB, generateTestUser, clearTestLogs } from './setup.js';
 import { userService } from '../src/services/user.service.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Suite-specific logs directory and prefix to ensure isolation.
+const suiteLogPrefix = `logging-${process.pid}-${Date.now()}`;
+const suiteLogsDir = path.join(__dirname, 'logs', suiteLogPrefix);
+
+function ensureSuiteLogsDir() {
+  if (fs.existsSync(suiteLogsDir)) {
+    fs.rmSync(suiteLogsDir, { recursive: true, force: true });
+  }
+  fs.mkdirSync(suiteLogsDir, { recursive: true });
+}
+
+function readLogFile(filename) {
+  const prefix = process.env.LOG_PREFIX || '';
+  const effectiveName = prefix ? `${prefix}_${filename}` : filename;
+  const logPath = path.join(process.env.TEST_LOGS_DIR || suiteLogsDir, effectiveName);
+  if (fs.existsSync(logPath)) {
+    return fs.readFileSync(logPath, 'utf8');
+  }
+  return '';
+}
 
 describe('Logging Tests', () => {
   let testUser1, testUser2;
 
   beforeAll(async () => {
+    // Configure suite-specific logging isolation
+    process.env.TEST_LOGS_DIR = suiteLogsDir;
+    process.env.LOG_PREFIX = suiteLogPrefix;
+    ensureSuiteLogsDir();
+
     await setupTestDB();
     clearTestLogs();
   });
 
   afterAll(async () => {
     await closeTestDB();
+    // Clean up suite-specific logs
+    if (fs.existsSync(suiteLogsDir)) {
+      fs.rmSync(suiteLogsDir, { recursive: true, force: true });
+    }
+    delete process.env.TEST_LOGS_DIR;
+    delete process.env.LOG_PREFIX;
   });
 
   beforeEach(async () => {
     await cleanTestDB();
+    ensureSuiteLogsDir();
     clearTestLogs();
     const userData1 = generateTestUser();
     const userData2 = generateTestUser();

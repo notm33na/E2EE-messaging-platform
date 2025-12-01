@@ -118,7 +118,7 @@ describe('Authentication Tests', () => {
 
       const decoded = verifyToken(token);
       expect(decoded.userId).toBe(userId);
-      expect(decoded.email).toBe(email);
+      // Email removed from token payload for security (minimized payload)
       expect(decoded.type).toBe('access');
     });
 

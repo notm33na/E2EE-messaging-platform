@@ -58,19 +58,30 @@ export function verifyToken(token) {
 }
 
 /**
- * Generates access token (short-lived)
+ * Generates access token (short-lived) with binding to IP/user-agent
  * @param {string} userId - User ID
  * @param {string} email - User email
+ * @param {string} ipAddress - Client IP address (for token binding)
+ * @param {string} userAgent - Client user agent (for token binding)
  * @returns {string} Access token
  */
-export function generateAccessToken(userId, email) {
+export function generateAccessToken(userId, email, ipAddress = null, userAgent = null) {
+  // Create binding hash from IP and user-agent to prevent token theft/replay
+  let bindingHash = null;
+  if (ipAddress || userAgent) {
+    const crypto = require('crypto');
+    const bindingString = `${ipAddress || ''}|${userAgent || ''}`;
+    bindingHash = crypto.createHash('sha256').update(bindingString).digest('hex').substring(0, 16); // 16 chars for efficiency
+  }
+
+  // Minimize payload - only include essential fields
   return signToken(
     {
-      userId,
-      email,
-      type: 'access'
+      userId, // Only include userId, not email (can be looked up from userId)
+      type: 'access',
+      binding: bindingHash // Token binding to prevent cross-device replay
     },
-    process.env.ACCESS_TOKEN_EXPIRY || '15m'
+    process.env.ACCESS_TOKEN_EXPIRY || '5m' // Reduced from 15m to 5m for better security
   );
 }
 
@@ -81,10 +92,10 @@ export function generateAccessToken(userId, email) {
  * @returns {string} Refresh token
  */
 export function generateRefreshToken(userId, email) {
+  // Minimize payload - only include essential fields
   return signToken(
     {
-      userId,
-      email,
+      userId, // Only include userId, not email
       type: 'refresh'
     },
     process.env.REFRESH_TOKEN_EXPIRY || '7d'

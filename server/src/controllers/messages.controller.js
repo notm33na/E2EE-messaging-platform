@@ -1,7 +1,8 @@
-import { MessageMeta } from '../models/MessageMeta.js';
+import { MessageMeta, verifyMetadataHash } from '../models/MessageMeta.js';
 import { logMessageMetadataAccess, logMessageForwarding, logFileChunkForwarding } from '../utils/messageLogging.js';
 import { validateTimestamp, generateMessageId } from '../utils/replayProtection.js';
 import { logReplayAttempt } from '../utils/replayProtection.js';
+import { requireSenderAuthorization } from '../middlewares/authorization.middleware.js';
 
 /**
  * Relay message (REST fallback)
@@ -132,24 +133,35 @@ export async function getPendingMessages(req, res, next) {
       .sort({ createdAt: 1 })
       .limit(100);
 
+    // Verify integrity hash for each message
+    for (const message of pendingMessages) {
+      if (!verifyMetadataHash(message)) {
+        // Metadata tampering detected - log security event
+        const { logEvent } = await import('../utils/attackLogging.js');
+        logEvent('METADATA_TAMPER_DETECTED', userId, 'Metadata integrity check failed', {
+          messageId: message.messageId,
+          sessionId: message.sessionId
+        });
+        // Remove tampered message from results
+        const index = pendingMessages.indexOf(message);
+        if (index > -1) {
+          pendingMessages.splice(index, 1);
+        }
+      }
+    }
+
     // Log metadata access
     logMessageMetadataAccess(userId, 'all', 'fetch_pending', {
       count: pendingMessages.length
     });
 
+    // Apply metadata minimization
+    const { minimizeMessageMeta } = await import('../utils/metadataMinimization.js');
+    
     res.json({
       success: true,
       data: {
-        messages: pendingMessages.map(msg => ({
-          messageId: msg.messageId,
-          sessionId: msg.sessionId,
-          sender: msg.sender,
-          type: msg.type,
-          timestamp: msg.timestamp,
-          seq: msg.seq,
-          meta: msg.meta,
-          createdAt: msg.createdAt
-        }))
+        messages: pendingMessages.map(msg => minimizeMessageMeta(msg))
       }
     });
   } catch (error) {

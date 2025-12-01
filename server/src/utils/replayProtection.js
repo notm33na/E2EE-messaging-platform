@@ -1,140 +1,98 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { logReplayAttempt as coreLogReplayAttempt, logInvalidSignature as coreLogInvalidSignature, logInvalidKEPMessage as coreLogInvalidKEPMessage } from './attackLogging.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const LOGS_DIR = path.join(__dirname, '../../logs');
+// Keep a LOGS_DIR constant aligned with the shared test logs directory,
+// even though primary logging is delegated to attackLogging utilities.
+// Path resolution: src/utils -> ../ (src) -> ../ (server) -> logs
+const LOGS_DIR =
+  process.env.TEST_LOGS_DIR || path.join(__dirname, '../../logs');
 
-// Ensure logs directory exists
 if (!fs.existsSync(LOGS_DIR)) {
   fs.mkdirSync(LOGS_DIR, { recursive: true });
 }
 
 /**
- * Logs replay attempt
+ * Logs replay attempt (legacy wrapper)
+ *
+ * NOTE: Core logging is delegated to attackLogging.logReplayAttempt
+ * to ensure a single, consistent log format across the codebase.
+ *
  * @param {string} sessionId - Session identifier
  * @param {number} seq - Sequence number
  * @param {number} timestamp - Message timestamp
  * @param {string} reason - Reason for rejection
  */
 export function logReplayAttempt(sessionId, seq, timestamp, reason) {
-  const logEntry = {
-    timestamp: new Date().toISOString(),
-    sessionId,
-    seq,
-    messageTimestamp: timestamp,
-    reason,
-    type: 'replay_attempt'
-  };
-
-  const logLine = JSON.stringify(logEntry) + '\n';
-  const logPath = path.join(LOGS_DIR, 'replay_attempts.log');
-
-  // Ensure directory exists
-  if (!fs.existsSync(LOGS_DIR)) {
-    fs.mkdirSync(LOGS_DIR, { recursive: true });
-  }
-
-  fs.appendFileSync(logPath, logLine, { flag: 'a' });
-  // Force sync to ensure write is committed (if file exists)
-  try {
-    if (fs.existsSync(logPath)) {
-      const fd = fs.openSync(logPath, 'r+');
-      fs.fsyncSync(fd);
-      fs.closeSync(fd);
-    }
-  } catch (err) {
-    // Ignore sync errors, write should still be committed
-  }
-  console.warn(`⚠️  Replay attempt detected: ${reason}`, logEntry);
+  // Delegate to core logger, which also records the userId/action.
+  // We pass null for userId to preserve the original interface.
+  coreLogReplayAttempt(sessionId, null, seq, timestamp, reason);
 }
 
 /**
- * Logs invalid signature
+ * Logs invalid signature (legacy wrapper)
+ *
  * @param {string} userId - User ID
  * @param {string} sessionId - Session identifier
  * @param {string} reason - Reason for rejection
  */
 export function logInvalidSignature(userId, sessionId, reason) {
-  const logEntry = {
-    timestamp: new Date().toISOString(),
-    userId,
-    sessionId,
-    reason,
-    type: 'invalid_signature'
-  };
-
-  const logLine = JSON.stringify(logEntry) + '\n';
-  const logPath = path.join(LOGS_DIR, 'invalid_signature.log');
-
-  // Ensure directory exists
-  if (!fs.existsSync(LOGS_DIR)) {
-    fs.mkdirSync(LOGS_DIR, { recursive: true });
-  }
-
-  fs.appendFileSync(logPath, logLine, { flag: 'a' });
-  // Force sync to ensure write is committed (if file exists)
-  try {
-    if (fs.existsSync(logPath)) {
-      const fd = fs.openSync(logPath, 'r+');
-      fs.fsyncSync(fd);
-      fs.closeSync(fd);
-    }
-  } catch (err) {
-    // Ignore sync errors, write should still be committed
-  }
-  console.warn(`⚠️  Invalid signature detected: ${reason}`, logEntry);
+  coreLogInvalidSignature(sessionId, userId, 'KEP', reason);
 }
 
 /**
- * Logs invalid KEP message
+ * Logs invalid KEP message (legacy wrapper)
+ *
  * @param {string} userId - User ID
  * @param {string} sessionId - Session identifier
  * @param {string} reason - Reason for rejection
  */
 export function logInvalidKEPMessage(userId, sessionId, reason) {
-  const logEntry = {
-    timestamp: new Date().toISOString(),
-    userId,
-    sessionId,
-    reason,
-    type: 'invalid_kep_message'
-  };
+  coreLogInvalidKEPMessage(sessionId, userId, reason);
+}
 
-  const logLine = JSON.stringify(logEntry) + '\n';
-  const logPath = path.join(LOGS_DIR, 'invalid_kep_message.log');
+// Server clock sync tracking (for timestamp validation)
+let serverClockOffset = 0; // Offset in milliseconds
+const MAX_CLOCK_SKEW = 60000; // 1 minute maximum allowed clock skew
 
-  // Ensure directory exists
-  if (!fs.existsSync(LOGS_DIR)) {
-    fs.mkdirSync(LOGS_DIR, { recursive: true });
-  }
-
-  fs.appendFileSync(logPath, logLine, { flag: 'a' });
-  // Force sync to ensure write is committed (if file exists)
-  try {
-    if (fs.existsSync(logPath)) {
-      const fd = fs.openSync(logPath, 'r+');
-      fs.fsyncSync(fd);
-      fs.closeSync(fd);
-    }
-  } catch (err) {
-    // Ignore sync errors, write should still be committed
-  }
-  console.warn(`⚠️  Invalid KEP message: ${reason}`, logEntry);
+/**
+ * Updates server clock offset (call periodically with NTP or trusted time source)
+ * @param {number} offset - Clock offset in milliseconds
+ */
+export function updateClockOffset(offset) {
+  serverClockOffset = offset;
 }
 
 /**
- * Validates timestamp freshness
+ * Validates timestamp freshness with improved clock skew detection
  * @param {number} messageTimestamp - Message timestamp
  * @param {number} maxAge - Maximum age in milliseconds (default: 2 minutes)
  * @returns {boolean} True if timestamp is valid
  */
 export function validateTimestamp(messageTimestamp, maxAge = 120000) {
-  const now = Date.now();
+  const now = Date.now() + serverClockOffset; // Adjust for clock skew
   const age = now - messageTimestamp;
-  return age <= maxAge && age >= -maxAge;
+  
+  // Stricter validation: reject if too far in future (more than maxAge + clock skew tolerance)
+  if (age < -(maxAge + MAX_CLOCK_SKEW)) {
+    return false; // Message from too far in future
+  }
+  
+  // Reject if too far in future (beyond maxAge window)
+  if (age < -maxAge) {
+    return false; // Message from future beyond acceptable window
+  }
+  
+  // Reject if too old
+  if (age > maxAge) {
+    return false;
+  }
+  
+  return true;
 }
 
 /**

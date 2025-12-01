@@ -55,6 +55,98 @@
   gap: 1rem;
 }
 
+.chat-security-warning {
+  align-self: stretch;
+  background: rgba(255, 99, 132, 0.18);
+  border-left: 4px solid rgba(255, 99, 132, 0.9);
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+.chat-security-title {
+  margin: 0 0 0.25rem 0;
+  font-weight: 600;
+}
+
+.chat-security-body {
+  margin: 0;
+  opacity: 0.9;
+}
+
+.chat-security-log {
+  align-self: stretch;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  color: #fff;
+  font-size: 0.8rem;
+}
+
+.chat-security-log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
+.chat-security-log-title {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.75rem;
+}
+
+.chat-security-log-count {
+  opacity: 0.8;
+}
+
+.chat-security-log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 8rem;
+  overflow-y: auto;
+}
+
+.chat-security-log-item {
+  padding: 0.35rem 0.4rem;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.4);
+}
+
+.chat-security-log-item-replay {
+  border-left: 3px solid rgba(255, 193, 7, 0.9);
+}
+
+.chat-security-log-item-integrity {
+  border-left: 3px solid rgba(255, 99, 132, 0.9);
+}
+
+.chat-security-log-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.15rem;
+}
+
+.chat-security-log-type {
+  font-weight: 500;
+}
+
+.chat-security-log-time {
+  opacity: 0.75;
+  font-size: 0.7rem;
+}
+
+.chat-security-log-reason {
+  opacity: 0.9;
+}
+
 .message {
   max-width: 70%;
   padding: 0.75rem 1rem;

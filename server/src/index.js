@@ -11,11 +11,13 @@ import { setupSecurityMiddleware } from './middleware/security.js';
 import { generateSelfSignedCert } from './utils/https-cert.js';
 import { initializeWebSocket } from './websocket/socket-handler.js';
 import { authErrorHandler } from './middlewares/auth.middleware.js';
+import { runPeriodicCleanup } from './utils/databaseCleanup.js';
 import healthRouter from './routes/health.js';
 import authRouter from './routes/auth.routes.js';
 import keysRouter from './routes/keys.routes.js';
 import kepRouter from './routes/kep.routes.js';
 import messagesRouter from './routes/messages.routes.js';
+import auditRouter from './routes/audit.routes.js';
 // AI engine removed - not required for E2EE cryptography system
 
 // Load environment variables from project root
@@ -28,8 +30,8 @@ const PORT_HTTP = parseInt(process.env.PORT_HTTP || '8080', 10);
 const PORT_HTTPS = parseInt(process.env.PORT_HTTPS || '8443', 10);
 
 // Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' })); // Limit request body size
+app.use(express.urlencoded({ extended: true, limit: '10mb' })); // Limit URL-encoded body size
 app.use(cookieParser()); // Parse cookies for refresh tokens
 app.use(morgan('combined'));
 
@@ -42,6 +44,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/keys', keysRouter);
 app.use('/api/kep', kepRouter);
 app.use('/api/messages', messagesRouter);
+app.use('/api/audit', auditRouter);
 // AI routes removed - not required for E2EE cryptography system
 
 // Error handling middleware
@@ -98,6 +101,25 @@ async function startServers() {
       console.log(`✓ API available at: https://localhost:${PORT_HTTPS}/api`);
       console.log(`✓ WebSocket available at: https://localhost:${PORT_HTTPS}`);
     });
+
+    // Schedule periodic database cleanup (daily at 2 AM)
+    const CLEANUP_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
+    setInterval(async () => {
+      try {
+        await runPeriodicCleanup(90, 30); // 90 days for messages, 30 days for KEP
+      } catch (error) {
+        console.error('Scheduled cleanup failed:', error);
+      }
+    }, CLEANUP_INTERVAL);
+
+    // Run initial cleanup after 1 minute (to allow server to start)
+    setTimeout(async () => {
+      try {
+        await runPeriodicCleanup(90, 30);
+      } catch (error) {
+        console.error('Initial cleanup failed:', error);
+      }
+    }, 60000);
 
   } catch (error) {
     console.error('Failed to start servers:', error);

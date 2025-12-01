@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { validatePassword as validatePasswordUtil } from '../utils/passwordValidation.js';
 import './Auth.css';
 
 export function Register() {
@@ -13,11 +14,10 @@ export function Register() {
   const navigate = useNavigate();
 
   const validatePassword = (pwd) => {
-    if (pwd.length < 8) return 'Password must be at least 8 characters';
-    if (!/[A-Z]/.test(pwd)) return 'Password must contain an uppercase letter';
-    if (!/[a-z]/.test(pwd)) return 'Password must contain a lowercase letter';
-    if (!/[0-9]/.test(pwd)) return 'Password must contain a number';
-    if (!/[^A-Za-z0-9]/.test(pwd)) return 'Password must contain a special character';
+    const validation = validatePasswordUtil(pwd);
+    if (!validation.valid) {
+      return validation.errors[0]; // Return first error
+    }
     return null;
   };
 

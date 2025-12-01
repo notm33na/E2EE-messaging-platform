@@ -19,7 +19,43 @@ export function initializeWebSocket(httpsServer) {
         : ['http://localhost:5173', 'https://localhost:5173'],
       methods: ['GET', 'POST'],
       credentials: true
+    },
+    maxHttpBufferSize: 10 * 1024 * 1024, // 10MB max message size
+    pingTimeout: 60000, // 60 seconds
+    pingInterval: 25000, // 25 seconds
+    connectTimeout: 45000, // 45 seconds
+    transports: ['websocket', 'polling'] // Allow both transports
+  });
+
+  // Connection limit tracking
+  const MAX_CONNECTIONS_PER_IP = parseInt(process.env.MAX_WS_CONNECTIONS_PER_IP || '10', 10);
+  const connectionCounts = new Map(); // IP -> count
+
+  // Cleanup connection counts periodically
+  setInterval(() => {
+    connectionCounts.clear(); // Reset counts every hour
+  }, 60 * 60 * 1000);
+
+  // Connection limit middleware
+  io.use((socket, next) => {
+    const clientIP = socket.handshake.address || socket.request.socket.remoteAddress;
+    const currentCount = connectionCounts.get(clientIP) || 0;
+    
+    if (currentCount >= MAX_CONNECTIONS_PER_IP) {
+      return next(new Error('Too many connections from this IP. Please close existing connections.'));
     }
+    
+    connectionCounts.set(clientIP, currentCount + 1);
+    
+    // Cleanup on disconnect
+    socket.on('disconnect', () => {
+      const count = connectionCounts.get(clientIP) || 0;
+      if (count > 0) {
+        connectionCounts.set(clientIP, count - 1);
+      }
+    });
+    
+    next();
   });
 
   // Authentication middleware for WebSocket connections
@@ -31,9 +67,29 @@ export function initializeWebSocket(httpsServer) {
                    socket.handshake.headers?.authorization?.replace('Bearer ', '');
 
       if (!token) {
-        // Allow connection but mark as unauthenticated
+        // Stricter: Reject unauthenticated connections for critical operations
+        // Allow connection but mark as unauthenticated - will be disconnected on critical ops
         socket.data.user = null;
+        socket.data.tokenAge = null; // Track token age for refresh requirement
         return next();
+      }
+
+      // Check token age - require refresh if token is older than 3 minutes (of 5 minute expiry)
+      try {
+        const decoded = verifyToken(token);
+        const tokenAge = Date.now() - (decoded.iat * 1000); // iat is in seconds
+        const maxAge = 3 * 60 * 1000; // 3 minutes
+        
+        if (tokenAge > maxAge) {
+          // Token is getting old - require refresh for critical operations
+          socket.data.tokenAge = tokenAge;
+          socket.data.requiresRefresh = true;
+        } else {
+          socket.data.tokenAge = tokenAge;
+          socket.data.requiresRefresh = false;
+        }
+      } catch (error) {
+        // Token invalid - will be handled below
       }
 
       try {
@@ -72,6 +128,48 @@ export function initializeWebSocket(httpsServer) {
     }
   });
 
+  // Message rate limiting per socket
+  const messageRateLimits = new Map(); // socketId -> { count: number, resetAt: number }
+  const MAX_MESSAGES_PER_MINUTE = 60; // 60 messages per minute per socket
+  const MAX_KEP_PER_5MIN = 10; // 10 KEP messages per 5 minutes per socket
+
+  // Cleanup rate limit tracking periodically
+  setInterval(() => {
+    const now = Date.now();
+    for (const [socketId, limit] of messageRateLimits.entries()) {
+      if (limit.resetAt < now) {
+        messageRateLimits.delete(socketId);
+      }
+    }
+  }, 60000); // Every minute
+
+  // Helper function to require authentication with token refresh check
+  const requireAuth = (socket, handler) => {
+    return (...args) => {
+      if (!socket.data.user) {
+        socket.emit('error', {
+          message: 'Authentication required',
+          code: 'AUTH_REQUIRED',
+          timestamp: new Date().toISOString()
+        });
+        socket.disconnect(true); // Force disconnect unauthenticated clients
+        return;
+      }
+      
+      // Check if token refresh is required for critical operations
+      if (socket.data.requiresRefresh) {
+        socket.emit('error', {
+          message: 'Token refresh required for this operation',
+          code: 'TOKEN_REFRESH_REQUIRED',
+          timestamp: new Date().toISOString()
+        });
+        return;
+      }
+      
+      return handler.apply(socket, args);
+    };
+  };
+
   // Connection handling
   io.on('connection', (socket) => {
     const isAuthenticated = !!socket.data.user;
@@ -79,8 +177,16 @@ export function initializeWebSocket(httpsServer) {
     if (isAuthenticated) {
       console.log(`✓ Authenticated WebSocket client connected: ${socket.id} (${socket.data.user.email})`);
     } else {
-      console.log(`✓ Unauthenticated WebSocket client connected: ${socket.id}`);
+      console.log(`⚠️  Unauthenticated WebSocket client connected: ${socket.id} - will be disconnected on critical operations`);
     }
+
+    // Initialize rate limit tracking for this socket
+    messageRateLimits.set(socket.id, { count: 0, resetAt: Date.now() + 60000, kepCount: 0, kepResetAt: Date.now() + 300000 });
+
+    // Cleanup on disconnect
+    socket.on('disconnect', () => {
+      messageRateLimits.delete(socket.id);
+    });
 
     // Send welcome message with identity
     socket.emit('hello', {
@@ -137,14 +243,25 @@ export function initializeWebSocket(httpsServer) {
       });
     });
 
-    // KEP:INIT event handler
-    socket.on('kep:init', async (data) => {
-      if (!isAuthenticated) {
-        socket.emit('error', {
-          message: 'Authentication required for KEP',
-          timestamp: new Date().toISOString()
-        });
-        return;
+    // KEP:INIT event handler - requires authentication
+    socket.on('kep:init', requireAuth(socket, async (data) => {
+
+      // Rate limiting check for KEP
+      const rateLimit = messageRateLimits.get(socket.id);
+      if (rateLimit) {
+        const now = Date.now();
+        if (now > rateLimit.kepResetAt) {
+          rateLimit.kepCount = 0;
+          rateLimit.kepResetAt = now + 300000; // 5 minutes
+        }
+        if (rateLimit.kepCount >= MAX_KEP_PER_5MIN) {
+          socket.emit('error', {
+            message: 'Key exchange rate limit exceeded. Please try again later.',
+            timestamp: new Date().toISOString()
+          });
+          return;
+        }
+        rateLimit.kepCount++;
       }
 
       try {
@@ -218,14 +335,25 @@ export function initializeWebSocket(httpsServer) {
       }
     });
 
-    // KEP:RESPONSE event handler
-    socket.on('kep:response', async (data) => {
-      if (!isAuthenticated) {
-        socket.emit('error', {
-          message: 'Authentication required for KEP',
-          timestamp: new Date().toISOString()
-        });
-        return;
+    // KEP:RESPONSE event handler - requires authentication
+    socket.on('kep:response', requireAuth(socket, async (data) => {
+
+      // Rate limiting check for KEP
+      const rateLimit = messageRateLimits.get(socket.id);
+      if (rateLimit) {
+        const now = Date.now();
+        if (now > rateLimit.kepResetAt) {
+          rateLimit.kepCount = 0;
+          rateLimit.kepResetAt = now + 300000; // 5 minutes
+        }
+        if (rateLimit.kepCount >= MAX_KEP_PER_5MIN) {
+          socket.emit('error', {
+            message: 'Key exchange rate limit exceeded. Please try again later.',
+            timestamp: new Date().toISOString()
+          });
+          return;
+        }
+        rateLimit.kepCount++;
       }
 
       try {
@@ -308,14 +436,25 @@ export function initializeWebSocket(httpsServer) {
       }
     });
 
-    // MSG:SEND event handler - Encrypted message sending
-    socket.on('msg:send', async (envelope) => {
-      if (!isAuthenticated) {
-        socket.emit('error', {
-          message: 'Authentication required for messaging',
-          timestamp: new Date().toISOString()
-        });
-        return;
+    // MSG:SEND event handler - Encrypted message sending - requires authentication
+    socket.on('msg:send', requireAuth(socket, async (envelope) => {
+
+      // Rate limiting check
+      const rateLimit = messageRateLimits.get(socket.id);
+      if (rateLimit) {
+        const now = Date.now();
+        if (now > rateLimit.resetAt) {
+          rateLimit.count = 0;
+          rateLimit.resetAt = now + 60000;
+        }
+        if (rateLimit.count >= MAX_MESSAGES_PER_MINUTE) {
+          socket.emit('error', {
+            message: 'Message rate limit exceeded. Please slow down.',
+            timestamp: new Date().toISOString()
+          });
+          return;
+        }
+        rateLimit.count++;
       }
 
       try {

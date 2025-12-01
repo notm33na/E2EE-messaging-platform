@@ -35,7 +35,11 @@ export async function register(req, res, next) {
     const user = await userService.createUser(email, password);
 
     // Generate tokens
-    const accessToken = generateAccessToken(user.id, user.email);
+    // Get client IP and user-agent for token binding
+    const clientIP = req.ip || req.socket.remoteAddress || req.headers['x-forwarded-for'] || '';
+    const userAgent = req.headers['user-agent'] || '';
+
+    const accessToken = generateAccessToken(user.id, user.email, clientIP, userAgent);
     const refreshToken = generateRefreshToken(user.id, user.email);
 
     // Store refresh token in database
@@ -103,17 +107,45 @@ export async function login(req, res, next) {
       });
     }
 
+    // Check account lockout status
+    const { isAccountLocked, recordFailedAttempt, clearFailedAttempts } = await import('../utils/accountLockout.js');
+    const lockoutStatus = isAccountLocked(user._id.toString());
+    
+    if (lockoutStatus.locked) {
+      logAuthenticationAttempt(user._id.toString(), false, 'Account locked due to too many failed attempts');
+      return res.status(423).json({
+        success: false,
+        error: 'Account locked',
+        message: `Account temporarily locked due to too many failed login attempts. Please try again after ${Math.ceil((lockoutStatus.lockoutUntil - Date.now()) / 60000)} minutes.`
+      });
+    }
+
     // Verify password
     const isValidPassword = await userService.verifyPassword(email, password);
 
     if (!isValidPassword) {
+      // Record failed attempt
+      const attemptStatus = recordFailedAttempt(user._id.toString());
       logAuthenticationAttempt(user._id.toString(), false, 'Invalid password');
+      
+      if (attemptStatus.locked) {
+        const LOCKOUT_DURATION_MINUTES = 15; // 15 minutes
+        return res.status(423).json({
+          success: false,
+          error: 'Account locked',
+          message: `Too many failed login attempts. Account locked for ${LOCKOUT_DURATION_MINUTES} minutes.`
+        });
+      }
+      
       return res.status(401).json({
         success: false,
         error: 'Invalid credentials',
-        message: 'Email or password is incorrect'
+        message: `Email or password is incorrect. ${attemptStatus.remainingAttempts} attempt(s) remaining before account lockout.`
       });
     }
+
+    // Clear failed attempts on successful login
+    clearFailedAttempts(user._id.toString());
 
     // Log successful authentication
     logAuthenticationAttempt(user._id.toString(), true, 'Login successful');
@@ -121,9 +153,13 @@ export async function login(req, res, next) {
     // Update last login
     await userService.updateLastLogin(user._id.toString());
 
-    // Generate tokens
+    // Get client IP and user-agent for token binding
+    const clientIP = req.ip || req.socket.remoteAddress || req.headers['x-forwarded-for'] || '';
+    const userAgent = req.headers['user-agent'] || '';
+
+    // Generate tokens with binding
     const userId = user._id.toString();
-    const accessToken = generateAccessToken(userId, user.email);
+    const accessToken = generateAccessToken(userId, user.email, clientIP, userAgent);
     const refreshToken = generateRefreshToken(userId, user.email);
 
     // Store refresh token in database
@@ -257,7 +293,11 @@ export async function refresh(req, res, next) {
 
     // Generate new tokens
     const userId = user._id.toString();
-    const newAccessToken = generateAccessToken(userId, user.email);
+    // Get client IP and user-agent for token binding
+    const clientIP = req.ip || req.socket.remoteAddress || req.headers['x-forwarded-for'] || '';
+    const userAgent = req.headers['user-agent'] || '';
+
+    const newAccessToken = generateAccessToken(userId, user.email, clientIP, userAgent);
     const newRefreshToken = generateRefreshToken(userId, user.email);
 
     // Store new refresh token

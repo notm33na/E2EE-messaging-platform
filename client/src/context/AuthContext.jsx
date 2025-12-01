@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import api from '../services/api';
 import { setAccessToken as setTokenStore, clearAccessToken, setTokenUpdateCallback } from '../utils/tokenStore';
 import { generateIdentityKeyPair, storePrivateKeyEncrypted, exportPublicKey } from '../crypto/identityKeys.js';
+import { initializeSessionEncryption, clearSessionEncryptionCache } from '../crypto/sessionManager.js';
 
 const AuthContext = createContext(null);
 
@@ -97,6 +98,16 @@ export function AuthProvider({ children }) {
         const { user, accessToken: token } = response.data.data;
         setUser(user);
         setAccessToken(token);
+        
+        // Initialize session encryption key cache
+        try {
+          await initializeSessionEncryption(user.id, password);
+          console.log('✓ Session encryption initialized');
+        } catch (encError) {
+          console.warn('Failed to initialize session encryption:', encError);
+          // Non-fatal - sessions will require password on first access
+        }
+        
         return { success: true, user };
       }
       
@@ -136,6 +147,14 @@ export function AuthProvider({ children }) {
         await storePrivateKeyEncrypted(user.id, privateKey, password);
         console.log('✓ Identity private key stored securely');
         
+        // Initialize session encryption key cache
+        try {
+          await initializeSessionEncryption(user.id, password);
+          console.log('✓ Session encryption initialized');
+        } catch (encError) {
+          console.warn('Failed to initialize session encryption:', encError);
+        }
+        
         // Upload public key to server
         try {
           await api.post('/keys/upload', { publicIdentityKeyJWK: publicKeyJWK });
@@ -171,6 +190,10 @@ export function AuthProvider({ children }) {
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
+      // Clear session encryption cache on logout
+      if (user) {
+        clearSessionEncryptionCache(user.id);
+      }
       setUser(null);
       setAccessToken(null);
       clearAccessToken(); // Clear token store
