@@ -75,5 +75,17 @@ if (typeof File !== 'undefined' && !File.prototype.arrayBuffer) {
   };
 }
 
+// Polyfill Blob.arrayBuffer for jsdom versions where it's missing.
+if (typeof Blob !== 'undefined' && !Blob.prototype.arrayBuffer) {
+  Blob.prototype.arrayBuffer = function () {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(this);
+    });
+  };
+}
+
 // Testing Library matchers (used mainly in UI-focused tests)
 require('@testing-library/jest-dom');

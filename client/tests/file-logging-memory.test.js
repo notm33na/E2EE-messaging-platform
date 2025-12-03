@@ -3,6 +3,7 @@
  * Tests logging functionality and memory clearing after encryption/decryption
  */
 
+import { jest } from '@jest/globals';
 import { encryptFile } from '../src/crypto/fileEncryption.js';
 import { decryptFile } from '../src/crypto/fileDecryption.js';
 import { createSmallFile, createLargeFile } from './helpers/test-files.js';
@@ -31,9 +32,10 @@ describe('Logging & Memory Security', () => {
     bobSocket = sockets.bob;
     
     // Generate mock session keys
+    // In E2EE: Alice's sendKey = Bob's recvKey for decryption
     const keys = generateMockKeys();
-    sendKey = keys.sendKey;
-    recvKey = keys.recvKey;
+    sendKey = keys.sendKey;  // Alice's sendKey (used for encryption)
+    recvKey = sendKey;  // Bob's recvKey = Alice's sendKey (for decryption)
     
     // Create session IDs
     sessionId = `test-session-logging-${Date.now()}`;

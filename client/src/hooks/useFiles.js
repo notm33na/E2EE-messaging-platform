@@ -34,7 +34,20 @@ export function useFiles() {
         setError(null);
         
         // Fetch pending messages which may include file metadata
-        const response = await api.get(`/messages/pending/${user.id}`);
+        let response;
+        try {
+          response = await api.get(`/messages/pending/${user.id}`);
+        } catch (err) {
+          // Handle 403 Forbidden - user might not have access or token issue
+          if (err.response?.status === 403) {
+            console.warn('Access denied to pending messages. User may need to re-authenticate.');
+            setError('Access denied. Please refresh the page.');
+            setFiles([]);
+            setLoading(false);
+            return;
+          }
+          throw err;
+        }
         
         if (response.data.success) {
           const messages = response.data.data.messages || [];

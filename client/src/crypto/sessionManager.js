@@ -55,7 +55,7 @@ export function triggerInvalidSignature(sessionId, message) {
 }
 
 const DB_NAME = 'InfosecCryptoDB';
-const DB_VERSION = 3; // Must match the highest version used by any module (clientLogger uses 3)
+const DB_VERSION = 7; // Must match the highest version used by any module
 const SESSIONS_STORE = 'sessions';
 const SESSION_ENCRYPTION_STORE = 'sessionEncryptionKeys'; // Store encryption metadata
 
@@ -72,6 +72,8 @@ async function openDB() {
 
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
+      const transaction = event.target.transaction;
+      
       // Create stores if they don't exist (idempotent)
       if (!db.objectStoreNames.contains(SESSIONS_STORE)) {
         db.createObjectStore(SESSIONS_STORE, { keyPath: 'sessionId' });
@@ -79,7 +81,33 @@ async function openDB() {
       if (!db.objectStoreNames.contains(SESSION_ENCRYPTION_STORE)) {
         db.createObjectStore(SESSION_ENCRYPTION_STORE, { keyPath: 'userId' });
       }
-      // Note: Other stores (identityKeys, clientLogs) are created by their respective modules
+      
+      // Ensure all other required stores exist
+      if (!db.objectStoreNames.contains('identityKeys')) {
+        db.createObjectStore('identityKeys', { keyPath: 'userId' });
+      }
+      if (!db.objectStoreNames.contains('messages')) {
+        const msgStore = db.createObjectStore('messages', { keyPath: 'id' });
+        msgStore.createIndex('sessionId', 'sessionId', { unique: false });
+        msgStore.createIndex('timestamp', 'timestamp', { unique: false });
+        msgStore.createIndex('seq', 'seq', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('messageQueue')) {
+        const queueStore = db.createObjectStore('messageQueue', { keyPath: 'id', autoIncrement: true });
+        queueStore.createIndex('sessionId', 'sessionId', { unique: false });
+        queueStore.createIndex('timestamp', 'timestamp', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('clientLogs')) {
+        const logStore = db.createObjectStore('clientLogs', { 
+          keyPath: 'id', 
+          autoIncrement: true 
+        });
+        logStore.createIndex('timestamp', 'timestamp', { unique: false });
+        logStore.createIndex('userId', 'userId', { unique: false });
+        logStore.createIndex('sessionId', 'sessionId', { unique: false });
+        logStore.createIndex('event', 'event', { unique: false });
+        logStore.createIndex('synced', 'synced', { unique: false });
+      }
     };
   });
 }
@@ -719,6 +747,13 @@ export async function deleteSession(sessionId) {
 export async function getUserSessions(userId) {
   try {
     const db = await openDB();
+    
+    // Verify store exists before attempting transaction
+    if (!db.objectStoreNames.contains(SESSIONS_STORE)) {
+      console.warn('sessions store does not exist, returning empty array');
+      return [];
+    }
+    
     const transaction = db.transaction([SESSIONS_STORE], 'readonly');
     const store = transaction.objectStore(SESSIONS_STORE);
 
@@ -745,7 +780,9 @@ export async function getUserSessions(userId) {
     }
     return decryptedSessions;
   } catch (error) {
-    throw new Error(`Failed to get user sessions: ${error.message}`);
+    console.error('Failed to get user sessions:', error);
+    // Return empty array instead of throwing to prevent breaking the UI
+    return [];
   }
 }
 

@@ -51,7 +51,12 @@ export function useDashboardStats() {
             messageCount = response.data.data.messages?.length || 0;
           }
         } catch (err) {
-          console.warn('Failed to fetch message count:', err);
+          // Handle 403 Forbidden gracefully - don't show error, just use 0 count
+          if (err.response?.status === 403) {
+            console.warn('Access denied to pending messages. Using 0 message count.');
+          } else {
+            console.warn('Failed to fetch message count:', err);
+          }
         }
 
         // Calculate stats from hooks data

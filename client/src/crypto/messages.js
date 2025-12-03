@@ -74,6 +74,13 @@ class SequenceManager {
   resetSequence(sessionId) {
     this.sequences.delete(sessionId);
   }
+
+  /**
+   * Resets all sequences (for testing)
+   */
+  resetAll() {
+    this.sequences.clear();
+  }
 }
 
 export const sequenceManager = new SequenceManager();

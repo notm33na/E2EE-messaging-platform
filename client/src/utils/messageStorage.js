@@ -6,7 +6,7 @@
  */
 
 const DB_NAME = 'InfosecCryptoDB';
-const DB_VERSION = 3; // Must match sessionManager version
+const DB_VERSION = 7; // Database version (must match highest version used by any module)
 const MESSAGES_STORE = 'messages';
 
 /**
@@ -22,6 +22,8 @@ async function openDB() {
 
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
+      const transaction = event.target.transaction;
+      
       // Create messages store if it doesn't exist
       if (!db.objectStoreNames.contains(MESSAGES_STORE)) {
         const store = db.createObjectStore(MESSAGES_STORE, { keyPath: 'id' });
@@ -31,6 +33,47 @@ async function openDB() {
         store.createIndex('timestamp', 'timestamp', { unique: false });
         // Index by sequence for ordering
         store.createIndex('seq', 'seq', { unique: false });
+      } else {
+        // Store exists, but check if indexes exist
+        const store = transaction.objectStore(MESSAGES_STORE);
+        
+        // Check and create indexes if they don't exist
+        if (!store.indexNames.contains('sessionId')) {
+          store.createIndex('sessionId', 'sessionId', { unique: false });
+        }
+        if (!store.indexNames.contains('timestamp')) {
+          store.createIndex('timestamp', 'timestamp', { unique: false });
+        }
+        if (!store.indexNames.contains('seq')) {
+          store.createIndex('seq', 'seq', { unique: false });
+        }
+      }
+      
+      // Ensure all other required stores exist
+      if (!db.objectStoreNames.contains('messageQueue')) {
+        const queueStore = db.createObjectStore('messageQueue', { keyPath: 'id', autoIncrement: true });
+        queueStore.createIndex('sessionId', 'sessionId', { unique: false });
+        queueStore.createIndex('timestamp', 'timestamp', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('sessions')) {
+        db.createObjectStore('sessions', { keyPath: 'sessionId' });
+      }
+      if (!db.objectStoreNames.contains('sessionEncryptionKeys')) {
+        db.createObjectStore('sessionEncryptionKeys', { keyPath: 'userId' });
+      }
+      if (!db.objectStoreNames.contains('identityKeys')) {
+        db.createObjectStore('identityKeys', { keyPath: 'userId' });
+      }
+      if (!db.objectStoreNames.contains('clientLogs')) {
+        const logStore = db.createObjectStore('clientLogs', { 
+          keyPath: 'id', 
+          autoIncrement: true 
+        });
+        logStore.createIndex('timestamp', 'timestamp', { unique: false });
+        logStore.createIndex('userId', 'userId', { unique: false });
+        logStore.createIndex('sessionId', 'sessionId', { unique: false });
+        logStore.createIndex('event', 'event', { unique: false });
+        logStore.createIndex('synced', 'synced', { unique: false });
       }
     };
   });
@@ -45,6 +88,13 @@ async function openDB() {
 export async function storeMessage(sessionId, message) {
   try {
     const db = await openDB();
+    
+    // Verify store exists before attempting transaction
+    if (!db.objectStoreNames.contains(MESSAGES_STORE)) {
+      console.warn('messages store does not exist, cannot store message');
+      return;
+    }
+    
     const transaction = db.transaction([MESSAGES_STORE], 'readwrite');
     const store = transaction.objectStore(MESSAGES_STORE);
 
@@ -80,9 +130,32 @@ export async function storeMessage(sessionId, message) {
 export async function loadMessages(sessionId, limit = 100) {
   try {
     const db = await openDB();
+    
+    // Verify store exists before attempting transaction
+    if (!db.objectStoreNames.contains(MESSAGES_STORE)) {
+      console.warn('messages store does not exist, returning empty array');
+      return [];
+    }
+    
     const transaction = db.transaction([MESSAGES_STORE], 'readonly');
     const store = transaction.objectStore(MESSAGES_STORE);
-    const index = store.index('sessionId');
+    
+    // Check if index exists
+    let index;
+    try {
+      index = store.index('sessionId');
+    } catch (e) {
+      // Index doesn't exist, use getAll and filter
+      const allMessages = await new Promise((resolve, reject) => {
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => reject(request.error);
+      });
+      
+      const filtered = allMessages.filter(msg => msg.sessionId === sessionId);
+      filtered.sort((a, b) => (a.seq || 0) - (b.seq || 0));
+      return filtered.slice(-limit);
+    }
 
     const messages = await new Promise((resolve, reject) => {
       const request = index.getAll(sessionId);

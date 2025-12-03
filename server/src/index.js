@@ -30,7 +30,15 @@ const PORT_HTTP = parseInt(process.env.PORT_HTTP || '8080', 10);
 const PORT_HTTPS = parseInt(process.env.PORT_HTTPS || '8443', 10);
 
 // Trust proxy for proper HTTPS detection behind reverse proxies (nginx, etc.)
-app.set('trust proxy', true);
+// In development, disable it to avoid rate limiting warnings (we're running directly)
+// In production, this should be configured based on your reverse proxy setup
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', true);
+} else {
+  // In development, disable trust proxy to avoid rate limiting warnings
+  // This is safe since we're running directly without a reverse proxy
+  app.set('trust proxy', false);
+}
 
 // Middleware
 app.use(express.json({ limit: '10mb' })); // Limit request body size

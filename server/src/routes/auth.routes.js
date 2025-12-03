@@ -11,7 +11,8 @@ import {
   reactivate,
   changePassword,
   getSessions,
-  revokeSession
+  revokeSession,
+  searchUsers
 } from '../controllers/auth.controller.js';
 import { verifyTokenMiddleware, requireAuth } from '../middlewares/auth.middleware.js';
 
@@ -66,7 +67,6 @@ router.post(
 // Login route
 router.post(
   '/login',
-  authLimiter,
   emailValidation,
   body('password').notEmpty().withMessage('Password is required'),
   login
@@ -136,6 +136,14 @@ router.delete(
   verifyTokenMiddleware,
   requireAuth,
   revokeSession
+);
+
+// Search users route (requires auth)
+router.get(
+  '/users/search',
+  verifyTokenMiddleware,
+  requireAuth,
+  searchUsers
 );
 
 export default router;

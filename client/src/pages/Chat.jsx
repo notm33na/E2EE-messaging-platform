@@ -38,7 +38,10 @@ export function Chat() {
     sessionError,
     fileProgress,
     errors,
-    clearError
+    clearError,
+    isConnected,
+    connectionError,
+    reconnect
   } = useChat(
     sessionId,
     socket,
@@ -87,12 +90,25 @@ export function Chat() {
       },
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionAttempts: 3,
-      reconnectionDelayMax: 5000
+      reconnectionAttempts: Infinity, // Always try to reconnect
+      reconnectionDelayMax: 10000,
+      timeout: 20000,
+      forceNew: false // Reuse connection if possible
     });
 
     newSocket.on('connect', () => {
       console.log('Chat WebSocket connected');
+      // Set up keep-alive ping to maintain connection
+      const keepAliveInterval = setInterval(() => {
+        if (newSocket.connected) {
+          newSocket.emit('ping', { timestamp: Date.now() });
+        } else {
+          clearInterval(keepAliveInterval);
+        }
+      }, 30000); // Ping every 30 seconds
+      
+      // Store interval ID for cleanup
+      newSocket._keepAliveInterval = keepAliveInterval;
     });
 
     newSocket.on('msg:sent', (data) => {
@@ -118,6 +134,10 @@ export function Chat() {
     setSocket(newSocket);
 
     return () => {
+      // Clear keep-alive interval
+      if (newSocket._keepAliveInterval) {
+        clearInterval(newSocket._keepAliveInterval);
+      }
       newSocket.close();
     };
   }, [accessToken, sessionId]);
@@ -130,12 +150,25 @@ export function Chat() {
   const handleSendMessage = async (message) => {
     if (!message.trim() || sending) return;
 
+    // Don't allow sending if session is being established
+    if (isEstablishingSession) {
+      alert('Please wait for the secure session to be established before sending messages.');
+      return;
+    }
+
     setSending(true);
     try {
       await sendMessage(message);
     } catch (error) {
       console.error('Failed to send message:', error);
-      alert('Failed to send message. Please try again.');
+      const errorMessage = error.message || 'Failed to send message. Please try again.';
+      
+      // Show user-friendly error
+      if (errorMessage.includes('Session not found') || errorMessage.includes('Session is being established')) {
+        alert('Please wait for the secure session to be established. This may take a few seconds.');
+      } else {
+        alert(errorMessage);
+      }
     } finally {
       setSending(false);
     }
@@ -258,6 +291,18 @@ export function Chat() {
                 : 'Message integrity verification failed. The affected message was blocked and not shown.'
             }
             timestamp={new Date(securityEvents[securityEvents.length - 1].timestamp).toLocaleString()}
+          />
+        </div>
+      )}
+
+      {/* Connection Status */}
+      {!isConnected && (
+        <div className="px-4 pt-4">
+          <ErrorMessage
+            title="Connection Lost"
+            message={connectionError || "Disconnected from server. Attempting to reconnect..."}
+            variant="warning"
+            onRetry={reconnect}
           />
         </div>
       )}

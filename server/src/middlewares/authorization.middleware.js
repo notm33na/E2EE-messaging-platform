@@ -23,7 +23,20 @@ export function requireOwnResource(req, res, next) {
   // Check if userId parameter matches authenticated user
   const requestedUserId = req.params.userId || req.body.userId || req.query.userId;
   
-  if (requestedUserId && requestedUserId !== req.user.id && requestedUserId !== req.user.id.toString()) {
+  // Compare as strings to handle ObjectId vs string mismatches
+  // Trim whitespace and normalize for comparison
+  const normalizedRequested = requestedUserId ? String(requestedUserId).trim() : null;
+  const normalizedUser = String(req.user.id).trim();
+  
+  if (normalizedRequested && normalizedRequested !== normalizedUser) {
+    // Log for debugging (in development)
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('Authorization mismatch:', {
+        requested: normalizedRequested,
+        authenticated: normalizedUser,
+        match: normalizedRequested === normalizedUser
+      });
+    }
     return res.status(403).json({
       success: false,
       error: 'Forbidden: Cannot access resources belonging to another user'

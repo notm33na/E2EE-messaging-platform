@@ -353,12 +353,10 @@ export default function Keys() {
         </div>
 
         {/* Keys List */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-foreground">Your Keys</h3>
-          
+        <div className="space-y-6">
           {loading ? (
             <div className="space-y-3">
-              {[1, 2].map((i) => (
+              {[1, 2, 3].map((i) => (
                 <div key={i} className="p-4 rounded-xl bg-card border border-border">
                   <Skeleton className="h-5 w-3/4 mb-2" />
                   <Skeleton className="h-4 w-full mb-1" />
@@ -374,111 +372,222 @@ export default function Keys() {
               </Button>
             </div>
           ) : (
-            <div className="space-y-3">
-              {keys.map((key, i) => (
-              <div
-                key={key.id}
-                className={cn(
-                  "p-4 rounded-xl bg-card border border-border hover:border-primary/30 transition-all duration-200 animate-fade-in",
-                  key.status === "expired" && "opacity-60"
-                )}
-                style={{ animationDelay: `${i * 50}ms` }}
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="flex items-start gap-4">
-                    <div className={cn(
-                      "w-12 h-12 rounded-xl flex items-center justify-center",
-                      key.status === "active" && "bg-success/10",
-                      key.status === "expiring" && "bg-warning/10",
-                      key.status === "expired" && "bg-destructive/10"
-                    )}>
-                      <Key className={cn(
-                        "w-6 h-6",
-                        key.status === "active" && "text-success",
-                        key.status === "expiring" && "text-warning",
-                        key.status === "expired" && "text-destructive"
-                      )} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className="font-medium text-foreground">{key.name}</h4>
-                        <KeyStatusBadge status={key.status} />
-                      </div>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {key.type} • {key.expiresAt}
-                      </p>
-                      <div className="flex items-center gap-2 mt-2 flex-wrap">
-                        <code className="text-xs font-mono text-muted-foreground bg-muted px-2 py-1 rounded">
-                          {showFingerprint[key.id] ? key.fingerprint : "•••• •••• •••• •••• ••••"}
-                        </code>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => toggleFingerprint(key.id)}
-                          title={showFingerprint[key.id] ? "Hide fingerprint" : "Show fingerprint"}
-                        >
-                          {showFingerprint[key.id] ? (
-                            <EyeOff className="w-3.5 h-3.5" />
-                          ) : (
-                            <Eye className="w-3.5 h-3.5" />
-                          )}
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="icon-sm"
-                          onClick={() => handleCopyFingerprint(key.fingerprint)}
-                          title="Copy fingerprint"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                    </div>
+            <>
+              {/* Identity Keys Section */}
+              {keys.filter(k => k.category === 'identity').length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-5 h-5 text-primary" />
+                    <h3 className="text-lg font-semibold text-foreground">Identity Keys</h3>
+                    <span className="text-sm text-muted-foreground">
+                      ({keys.filter(k => k.category === 'identity').length})
+                    </span>
                   </div>
+                  <div className="space-y-3">
+                    {keys.filter(k => k.category === 'identity').map((key, i) => (
+                      <div
+                        key={key.id}
+                        className={cn(
+                          "p-4 rounded-xl bg-card border border-border hover:border-primary/30 transition-all duration-200 animate-fade-in",
+                          key.status === "expired" && "opacity-60"
+                        )}
+                        style={{ animationDelay: `${i * 50}ms` }}
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                          <div className="flex items-start gap-4">
+                            <div className={cn(
+                              "w-12 h-12 rounded-xl flex items-center justify-center",
+                              key.status === "active" && "bg-success/10",
+                              key.status === "expiring" && "bg-warning/10",
+                              key.status === "expired" && "bg-destructive/10"
+                            )}>
+                              <Key className={cn(
+                                "w-6 h-6",
+                                key.status === "active" && "text-success",
+                                key.status === "expiring" && "text-warning",
+                                key.status === "expired" && "text-destructive"
+                              )} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h4 className="font-medium text-foreground">{key.name}</h4>
+                                <KeyStatusBadge status={key.status} />
+                              </div>
+                              <p className="text-sm text-muted-foreground mt-1">
+                                {key.keyType || key.type} • {key.expiresAt}
+                              </p>
+                              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                                <code className="text-xs font-mono text-muted-foreground bg-muted px-2 py-1 rounded">
+                                  {showFingerprint[key.id] ? key.fingerprint : "•••• •••• •••• •••• ••••"}
+                                </code>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  onClick={() => toggleFingerprint(key.id)}
+                                  title={showFingerprint[key.id] ? "Hide fingerprint" : "Show fingerprint"}
+                                >
+                                  {showFingerprint[key.id] ? (
+                                    <EyeOff className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <Eye className="w-3.5 h-3.5" />
+                                  )}
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon-sm"
+                                  onClick={() => handleCopyFingerprint(key.fingerprint)}
+                                  title="Copy fingerprint"
+                                >
+                                  <Copy className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
 
-                  <div className="flex items-center gap-2 sm:flex-shrink-0">
-                    {key.status !== "expired" && (
-                      <>
-                        <Button 
-                          variant="secondary" 
-                          size="sm"
-                          onClick={() => handleRotateKey(key.id)}
-                          disabled={isRotating}
-                        >
-                          <RefreshCw className={cn("w-3.5 h-3.5 mr-1.5", isRotating && "animate-spin")} />
-                          Rotate
-                        </Button>
-                        <Button 
-                          variant="secondary" 
-                          size="sm"
-                          onClick={() => handleExportKey(key)}
-                        >
-                          <Download className="w-3.5 h-3.5 mr-1.5" />
-                          Export
-                        </Button>
-                      </>
-                    )}
-                    <Button 
-                      variant="ghost" 
-                      size="icon-sm" 
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => handleDeleteKey(key.id)}
-                      disabled={isDeleting}
-                      title="Delete key"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                          <div className="flex items-center gap-2 sm:flex-shrink-0">
+                            {key.status !== "expired" && (
+                              <>
+                                <Button 
+                                  variant="secondary" 
+                                  size="sm"
+                                  onClick={() => handleRotateKey(key.id)}
+                                  disabled={isRotating}
+                                >
+                                  <RefreshCw className={cn("w-3.5 h-3.5 mr-1.5", isRotating && "animate-spin")} />
+                                  Rotate
+                                </Button>
+                                <Button 
+                                  variant="secondary" 
+                                  size="sm"
+                                  onClick={() => handleExportKey(key)}
+                                >
+                                  <Download className="w-3.5 h-3.5 mr-1.5" />
+                                  Export
+                                </Button>
+                              </>
+                            )}
+                            <Button 
+                              variant="ghost" 
+                              size="icon-sm" 
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => handleDeleteKey(key.id)}
+                              disabled={isDeleting}
+                              title="Delete key"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-border text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5" />
+                            Created {formatFileTimestamp(key.createdAt)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
+              )}
 
-                <div className="flex items-center gap-4 mt-3 pt-3 border-t border-border text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-3.5 h-3.5" />
-                    Created {formatFileTimestamp(key.createdAt)}
-                  </span>
+              {/* Session Keys Section */}
+              {keys.filter(k => k.category === 'session').length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Key className="w-5 h-5 text-primary" />
+                    <h3 className="text-lg font-semibold text-foreground">Session Keys</h3>
+                    <span className="text-sm text-muted-foreground">
+                      ({keys.filter(k => k.category === 'session').length})
+                    </span>
+                  </div>
+                  <div className="space-y-3">
+                    {keys.filter(k => k.category === 'session').map((key, i) => (
+                      <div
+                        key={key.id}
+                        className={cn(
+                          "p-4 rounded-xl bg-card border border-border hover:border-primary/30 transition-all duration-200 animate-fade-in",
+                          key.status === "expired" && "opacity-60"
+                        )}
+                        style={{ animationDelay: `${i * 50}ms` }}
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                          <div className="flex items-start gap-4">
+                            <div className={cn(
+                              "w-12 h-12 rounded-xl flex items-center justify-center",
+                              key.status === "active" && "bg-primary/10",
+                              key.status === "expiring" && "bg-warning/10",
+                              key.status === "expired" && "bg-destructive/10"
+                            )}>
+                              <Key className={cn(
+                                "w-6 h-6",
+                                key.status === "active" && "text-primary",
+                                key.status === "expiring" && "text-warning",
+                                key.status === "expired" && "text-destructive"
+                              )} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h4 className="font-medium text-foreground">{key.name}</h4>
+                                <KeyStatusBadge status={key.status} />
+                              </div>
+                              <p className="text-sm text-muted-foreground mt-1">
+                                {key.keyType || key.type} • {key.expiresAt}
+                              </p>
+                              {key.keyPurpose && (
+                                <p className="text-xs text-muted-foreground mt-1 italic">
+                                  {key.keyPurpose}
+                                </p>
+                              )}
+                              {key.sessionId && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Session ID: <code className="bg-muted px-1 py-0.5 rounded">{key.sessionId.substring(0, 16)}...</code>
+                                  {key.peerId && (
+                                    <> • Peer: <code className="bg-muted px-1 py-0.5 rounded">{key.peerId.substring(0, 8)}...</code></>
+                                  )}
+                                </p>
+                              )}
+                              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                                <code className="text-xs font-mono text-muted-foreground bg-muted px-2 py-1 rounded">
+                                  {showFingerprint[key.id] ? key.fingerprint : "•••• •••• •••• •••• ••••"}
+                                </code>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  onClick={() => toggleFingerprint(key.id)}
+                                  title={showFingerprint[key.id] ? "Hide fingerprint" : "Show fingerprint"}
+                                >
+                                  {showFingerprint[key.id] ? (
+                                    <EyeOff className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <Eye className="w-3.5 h-3.5" />
+                                  )}
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon-sm"
+                                  onClick={() => handleCopyFingerprint(key.fingerprint)}
+                                  title="Copy fingerprint"
+                                >
+                                  <Copy className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-border text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5" />
+                            Created {formatFileTimestamp(key.createdAt)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
 
           {!loading && !error && keys.length === 0 && (
@@ -500,36 +609,37 @@ export default function Keys() {
               <Key className="w-5 h-5" />
               {actionType === 'generate' ? 'Generate Identity Key' : 'Rotate Identity Key'}
             </DialogTitle>
-            <DialogDescription className="space-y-2">
-              <p>
-                {actionType === 'generate' 
-                  ? 'Enter your password to generate a new identity key pair.'
-                  : 'Enter your password to rotate your identity key.'}
-              </p>
-              <div className="mt-3 p-3 rounded-lg bg-primary/5 border border-primary/20">
-                <p className="text-sm font-medium text-foreground mb-1">What are Identity Keys?</p>
-                <p className="text-xs text-muted-foreground">
-                  Identity keys are long-term cryptographic keys (ECC P-256) used to:
-                </p>
-                <ul className="text-xs text-muted-foreground mt-1 ml-4 list-disc space-y-0.5">
-                  <li>Sign ephemeral keys during key exchange to prevent MITM attacks</li>
-                  <li>Verify your identity in secure communications</li>
-                  <li>Provide non-repudiation (proof of message origin)</li>
-                </ul>
-              </div>
-              {actionType === 'rotate' && (
-                <div className="mt-2 p-3 rounded-lg bg-warning/5 border border-warning/20">
-                  <p className="text-sm font-medium text-foreground mb-1">Why Rotate Keys?</p>
-                  <ul className="text-xs text-muted-foreground mt-1 ml-4 list-disc space-y-0.5">
-                    <li>Enhanced security after potential compromise</li>
-                    <li>Regular key rotation (recommended every 90 days)</li>
-                    <li>Recovery from suspected key exposure</li>
-                    <li>Note: Existing encrypted sessions will need to re-establish keys</li>
-                  </ul>
-                </div>
-              )}
+            <DialogDescription>
+              {actionType === 'generate' 
+                ? 'Enter your password to generate a new identity key pair.'
+                : 'Enter your password to rotate your identity key.'}
             </DialogDescription>
           </DialogHeader>
+          
+          <div className="space-y-3 py-2">
+            <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+              <p className="text-sm font-medium text-foreground mb-1">What are Identity Keys?</p>
+              <p className="text-xs text-muted-foreground">
+                Identity keys are long-term cryptographic keys (ECC P-256) used to:
+              </p>
+              <ul className="text-xs text-muted-foreground mt-1 ml-4 list-disc space-y-0.5">
+                <li>Sign ephemeral keys during key exchange to prevent MITM attacks</li>
+                <li>Verify your identity in secure communications</li>
+                <li>Provide non-repudiation (proof of message origin)</li>
+              </ul>
+            </div>
+            {actionType === 'rotate' && (
+              <div className="p-3 rounded-lg bg-warning/5 border border-warning/20">
+                <p className="text-sm font-medium text-foreground mb-1">Why Rotate Keys?</p>
+                <ul className="text-xs text-muted-foreground mt-1 ml-4 list-disc space-y-0.5">
+                  <li>Enhanced security after potential compromise</li>
+                  <li>Regular key rotation (recommended every 90 days)</li>
+                  <li>Recovery from suspected key exposure</li>
+                  <li>Note: Existing encrypted sessions will need to re-establish keys</li>
+                </ul>
+              </div>
+            )}
+          </div>
           
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -600,11 +710,14 @@ export default function Keys() {
               <AlertTriangle className="w-5 h-5" />
               Delete Identity Key
             </DialogTitle>
-            <DialogDescription className="space-y-2 pt-2">
-              <p className="font-medium text-foreground">
-                This action cannot be undone.
-              </p>
-              <p>
+            <DialogDescription>
+              This action cannot be undone. Deleting your identity key will prevent you from establishing new encrypted sessions.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-3 py-2">
+            <div>
+              <p className="text-sm font-medium text-foreground mb-2">
                 Deleting your identity key will prevent you from:
               </p>
               <ul className="list-disc list-inside text-sm space-y-1 text-muted-foreground ml-2">
@@ -612,13 +725,14 @@ export default function Keys() {
                 <li>Signing ephemeral keys for key exchange</li>
                 <li>Verifying your identity in secure communications</li>
               </ul>
-              <div className="mt-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
-                <p className="text-sm font-medium text-destructive">
-                  ⚠️ Warning: You'll need to generate a new key to use encrypted messaging again.
-                </p>
-              </div>
-            </DialogDescription>
-          </DialogHeader>
+            </div>
+            <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+              <p className="text-sm font-medium text-destructive">
+                ⚠️ Warning: You'll need to generate a new key to use encrypted messaging again.
+              </p>
+            </div>
+          </div>
+          
           <DialogFooter className="gap-2 sm:gap-0">
             <Button
               variant="outline"

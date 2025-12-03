@@ -9,6 +9,8 @@
     "dev:client": "cd client && npm run dev",
     "build": "cd client && npm run build",
     "test": "echo 'Tests can be run with: node integration/fullSystemTest.js'",
+    "test:attacks": "cd client && npm run test:attacks",
+    "test:mitm": "cd client && npm run test:attacks -- mitm_attack_demonstration.test.js",
     "start": "cd server && npm start"
   },
   "keywords": [
@@ -22,6 +24,10 @@
   "license": "ISC",
   "dependencies": {
     "winston": "^3.18.3",
-    "winston-daily-rotate-file": "^5.0.0"
+    "winston-daily-rotate-file": "^5.0.0",
+    "@peculiar/webcrypto": "^1.5.0"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "^6.0.0"
   }
 }

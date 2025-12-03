@@ -1,4 +1,5 @@
 import bcrypt from 'bcrypt';
+import mongoose from 'mongoose';
 import { User } from '../models/User.js';
 
 /**
@@ -61,8 +62,10 @@ class UserService {
    * @returns {Promise<Object|null>} User object or null
    */
   async getUserByEmail(email, includePassword = false) {
+    // Normalize email to lowercase and trim (matching schema behavior)
+    const normalizedEmail = email ? email.trim().toLowerCase() : email;
     const selectFields = includePassword ? '+passwordHash' : '';
-    return await User.findOne({ email }).select(selectFields);
+    return await User.findOne({ email: normalizedEmail }).select(selectFields);
   }
 
   /**
@@ -261,6 +264,79 @@ class UserService {
       return [];
     }
     return user.refreshTokens || [];
+  }
+
+  /**
+   * Searches for users by email (excluding current user)
+   * @param {string} query - Search query (email)
+   * @param {string} excludeUserId - User ID to exclude from results
+   * @param {number} limit - Maximum number of results (default: 10)
+   * @returns {Promise<Array>} Array of sanitized user objects
+   */
+  async searchUsers(query, excludeUserId, limit = 10) {
+    if (!query || query.trim().length < 2) {
+      return [];
+    }
+
+    const trimmedQuery = query.trim().toLowerCase(); // Normalize to lowercase since emails are stored lowercase
+    
+    // Escape special regex characters in the query
+    const escapedQuery = trimmedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    
+    // Build search conditions
+    // Since emails are stored lowercase, we can use case-insensitive regex or exact match
+    const searchConditions = {
+      $or: [
+        { email: trimmedQuery }, // Exact match (emails are lowercase in DB)
+        { email: { $regex: new RegExp(`^${escapedQuery}`, 'i') } }, // Starts with
+        { email: { $regex: new RegExp(escapedQuery, 'i') } } // Contains
+      ],
+      isActive: true
+    };
+    
+    // Exclude current user if provided
+    if (excludeUserId) {
+      // Convert to ObjectId if valid, otherwise keep as string
+      // MongoDB's $ne will handle the comparison correctly
+      let excludeId;
+      try {
+        if (mongoose.Types.ObjectId.isValid(excludeUserId)) {
+          excludeId = new mongoose.Types.ObjectId(excludeUserId);
+        } else {
+          excludeId = excludeUserId;
+        }
+      } catch (e) {
+        excludeId = excludeUserId;
+      }
+      searchConditions._id = { $ne: excludeId };
+    }
+    
+    // Debug logging in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log('User search query:', {
+        originalQuery: query,
+        trimmedQuery,
+        escapedQuery,
+        excludeUserId,
+        searchConditions: JSON.stringify(searchConditions, null, 2)
+      });
+    }
+    
+    const users = await User.find(searchConditions)
+      .limit(limit)
+      .select('-refreshTokens -passwordHash')
+      .sort({ email: 1 }); // Sort by email for consistent results
+
+    // Debug logging in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log('User search results:', {
+        query: trimmedQuery,
+        found: users.length,
+        emails: users.map(u => u.email)
+      });
+    }
+
+    return users.map(user => this.safeUser(user));
   }
 }
 

@@ -27,16 +27,24 @@ describe('Complete File Encryption & Decryption Flow', () => {
     bobSocket = sockets.bob;
     
     // Generate mock session keys
+    // In E2EE: Alice's sendKey = Bob's recvKey, and Bob's sendKey = Alice's recvKey
+    // For testing, we create a session from Alice's perspective where:
+    // - sendKey is used by Alice to encrypt
+    // - recvKey should equal Bob's recvKey (which equals Alice's sendKey for decryption)
     const keys = generateMockKeys();
-    sendKey = keys.sendKey;
-    recvKey = keys.recvKey;
+    sendKey = keys.sendKey;  // Alice's sendKey (used for encryption)
+    // For Bob to decrypt, he needs recvKey = Alice's sendKey
+    // So we set recvKey = sendKey in the session (from Bob's perspective, this is his recvKey)
+    recvKey = sendKey;  // Bob's recvKey = Alice's sendKey (for decryption)
     
     // Create session IDs
     sessionId = `test-session-${Date.now()}`;
     aliceUserId = 'alice-id';
     bobUserId = 'bob-id';
     
-    // Create test session with unencrypted keys (for testing)
+    // Create test session from Alice's perspective with unencrypted keys (for testing)
+    // The session stores: sendKey (Alice's sendKey) and recvKey (Bob's recvKey = Alice's sendKey)
+    // When Bob decrypts with getRecvKey(sessionId, bobUserId), he gets recvKey which equals sendKey
     await createTestSession(sessionId, aliceUserId, bobUserId, sendKey, recvKey);
     
     // Create mock database

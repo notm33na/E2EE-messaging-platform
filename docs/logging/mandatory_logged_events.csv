@@ -1,0 +1,12 @@
+Event Type,Trigger,Metadata Logged,Log File,Reason
+Replay Attack Attempt,"Timestamp out of validity window, duplicate message ID, sequence number not monotonic, duplicate nonce detected","eventType: 'REPLAY_ATTEMPT', sessionId, userId, seq, timestamp, reason, action: 'REJECTED'",replay_attempts.log,Detect and prevent replay attacks
+Invalid Signature,"Signature verification fails on KEP_INIT, KEP_RESPONSE, or KEY_UPDATE messages","eventType: 'INVALID_SIGNATURE', sessionId, userId, messageType, reason, action: 'REJECTED'",invalid_signature.log,Detect MITM attacks and key tampering
+Key Exchange Attempt,"KEP_INIT or KEP_RESPONSE messages processed","eventType: 'KEY_EXCHANGE', sessionId, fromUserId, toUserId, messageType, success, action: 'ACCEPTED' or 'REJECTED'",key_exchange_attempts.log,Track key exchange protocol events
+Authentication Attempt,"Login attempts (success or failure)","eventType: 'AUTH_ATTEMPT', userId, success, reason, action: 'ACCEPTED' or 'REJECTED'",authentication_attempts.log,Track authentication events and potential brute force
+Failed Decryption,"Message decryption fails (invalid auth tag, wrong key, etc.)","eventType: 'DECRYPTION_FAILED', sessionId, userId, seq, reason, action: 'REJECTED'",failed_decryption.log,Detect tampering or key compromise
+Invalid KEP Message,"Malformed or invalid KEP messages (missing fields, structure issues)","eventType: 'INVALID_KEP_MESSAGE', type: 'invalid_kep_message', sessionId, userId, reason, action: 'REJECTED'",invalid_kep_message.log,Detect protocol violations
+Message Metadata Access,"Metadata stored, fetched, or accessed","eventType: 'METADATA_ACCESS' or type: 'message_metadata_access', sessionId, userId, action, timestamp",message_metadata_access.log,Audit metadata access
+Message Forwarding,"Messages forwarded via WebSocket or REST","timestamp, senderId, receiverId, sessionId, messageType, type: 'msg_forwarding'",msg_forwarding.log,Track message delivery
+File Chunk Forwarding,File chunks forwarded,"timestamp, senderId, receiverId, sessionId, chunkIndex, type: 'file_chunk_forwarding'",file_chunk_forwarding.log,Track file transmission
+Replay Detected,"Replay detection (separate from replay attempts)","timestamp, userId, sessionId, seq, reason, type: 'replay_detected'",replay_detected.log,Additional replay detection channel
+

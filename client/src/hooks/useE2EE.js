@@ -240,13 +240,26 @@ export function useE2EE(sessionId, peerId) {
         rejectUnauthorized: false, // For self-signed certs in dev
         reconnection: true,
         reconnectionDelay: 1000,
-        reconnectionAttempts: 3,
-        reconnectionDelayMax: 5000
+        reconnectionAttempts: Infinity, // Always try to reconnect
+        reconnectionDelayMax: 10000,
+        timeout: 20000,
+        forceNew: false // Reuse connection if possible
       });
 
       socketRef.current.on('connect', () => {
         setIsConnected(true);
         setError(null);
+        // Set up keep-alive ping to maintain connection
+        const keepAliveInterval = setInterval(() => {
+          if (socketRef.current && socketRef.current.connected) {
+            socketRef.current.emit('ping', { timestamp: Date.now() });
+          } else {
+            clearInterval(keepAliveInterval);
+          }
+        }, 30000); // Ping every 30 seconds
+        
+        // Store interval ID for cleanup
+        socketRef.current._keepAliveInterval = keepAliveInterval;
       });
 
       socketRef.current.on('disconnect', () => {
@@ -279,6 +292,10 @@ export function useE2EE(sessionId, peerId) {
 
     return () => {
       if (socketRef.current) {
+        // Clear keep-alive interval
+        if (socketRef.current._keepAliveInterval) {
+          clearInterval(socketRef.current._keepAliveInterval);
+        }
         socketRef.current.disconnect();
       }
     };

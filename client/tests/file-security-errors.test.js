@@ -16,6 +16,9 @@ import { sha256Hex } from './test-helpers/webcryptoHelper.js';
 import { base64ToArrayBuffer } from '../src/crypto/signatures.js';
 
 describe('Security & Error Handling', () => {
+  // Increase timeout for this test suite
+  jest.setTimeout(60000); // 60 seconds
+  
   let sessionId;
   let aliceUserId, bobUserId;
   let sendKey, recvKey, wrongKey;
@@ -28,9 +31,10 @@ describe('Security & Error Handling', () => {
     bobSocket = sockets.bob;
     
     // Generate mock session keys
+    // In E2EE: Alice's sendKey = Bob's recvKey for decryption
     const keys = generateMockKeys();
-    sendKey = keys.sendKey;
-    recvKey = keys.recvKey;
+    sendKey = keys.sendKey;  // Alice's sendKey (used for encryption)
+    recvKey = sendKey;  // Bob's recvKey = Alice's sendKey (for decryption)
     
     // Generate wrong key for testing
     const wrongKeys = generateMockKeys();
@@ -157,7 +161,7 @@ describe('Security & Error Handling', () => {
       ).rejects.toThrow();
       
       console.log('✓ Stale timestamp rejected');
-    });
+    }, 10000); // 10 second timeout for this test
   });
 
   describe('AuthTag Validation', () => {

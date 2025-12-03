@@ -10,9 +10,9 @@
  * 3. Both: Compute shared secret → Derive session keys → Store session
  */
 
-import { generateEphemeralKeyPair, computeSharedSecret, deriveSessionKeys, exportPublicKey, importPublicKey } from './ecdh.js';
+import { generateEphemeralKeyPair, computeSharedSecret, deriveSessionKeys, exportPublicKey, importPublicKey as importEphPublicKey } from './ecdh.js';
 import { buildKEPInit, buildKEPResponse, validateKEPInit, validateKEPResponse } from './messages.js';
-import { loadPrivateKey } from './identityKeys.js';
+import { loadPrivateKey, importPublicKey as importIdentityPublicKey } from './identityKeys.js';
 import { createSession, initializeSessionEncryption } from './sessionManager.js';
 import { generateSecureSessionId } from './sessionIdSecurity.js';
 import api from '../services/api.js';
@@ -43,10 +43,29 @@ export async function initiateSession(userId, peerId, password, socket) {
       return { sessionId, session: existingSession };
     }
 
-    // 4. Load our identity private key
-    const identityPrivateKey = await loadPrivateKey(userId, password);
+    // 4. Check if identity key exists
+    const { hasIdentityKey } = await import('./identityKeys.js');
+    const hasKey = await hasIdentityKey(userId);
+    if (!hasKey) {
+      throw new Error('Identity key not found. Please generate an identity key pair first in the Keys page.');
+    }
 
-    // 5. Fetch peer's public identity key
+    // 5. Load our identity private key
+    let identityPrivateKey;
+    try {
+      identityPrivateKey = await loadPrivateKey(userId, password);
+    } catch (error) {
+      // Provide more context about the error
+      if (error.message.includes('decrypt') || error.message.includes('password')) {
+        throw new Error('Failed to decrypt identity key. Please verify your password is correct, or regenerate your keys if needed.');
+      } else if (error.message.includes('not found')) {
+        throw new Error('Identity key not found. Please generate an identity key pair in the Keys page.');
+      } else {
+        throw new Error(`Failed to load identity key: ${error.message || 'Unknown error'}`);
+      }
+    }
+
+    // 6. Fetch peer's public identity key
     let peerIdentityPubKeyJWK;
     try {
       const response = await api.get(`/keys/${peerId}`);
@@ -58,13 +77,13 @@ export async function initiateSession(userId, peerId, password, socket) {
       throw new Error(`Failed to fetch peer's public identity key: ${error.message}`);
     }
 
-    // 6. Import peer's public identity key
-    const peerIdentityPubKey = await importPublicKey(peerIdentityPubKeyJWK);
+    // 7. Import peer's public identity key (ECDSA for signature verification)
+    const peerIdentityPubKey = await importIdentityPublicKey(peerIdentityPubKeyJWK);
 
     // 7. Generate our ephemeral key pair
-    const { privateKey: ephPrivateKey, publicKey: ephPublicKey } = await generateEphemeralKeyPair();
+    let { privateKey: ephPrivateKey, publicKey: ephPublicKey } = await generateEphemeralKeyPair();
 
-    // 8. Build KEP_INIT message
+    // 9. Build KEP_INIT message
     const kepInitMessage = await buildKEPInit(
       userId,
       peerId,
@@ -77,17 +96,54 @@ export async function initiateSession(userId, peerId, password, socket) {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         socket.off('kep:response', handleResponse);
-        reject(new Error('Session establishment timeout: No response from peer'));
+        socket.off('kep:sent', handleSent);
+        socket.off('error', handleError);
+        reject(new Error('Session establishment timeout: No response from peer. The peer may be offline or not connected.'));
       }, 30000); // 30 second timeout
+
+      const handleSent = (data) => {
+        if (data.sessionId === sessionId) {
+          console.log(`KEP_INIT delivery status: ${data.delivered ? 'delivered' : 'pending'}`);
+          if (!data.delivered) {
+            console.warn('KEP_INIT not delivered - peer may be offline');
+            // If peer is offline, reject immediately with a helpful message
+            clearTimeout(timeout);
+            socket.off('kep:response', handleResponse);
+            socket.off('kep:sent', handleSent);
+            socket.off('error', handleError);
+            reject(new Error('Peer is not online. The other user must be connected to establish a session.'));
+          }
+        }
+      };
+
+      const handleError = (error) => {
+        if (error.message && error.message.includes('KEP')) {
+          console.error('KEP error from server:', error);
+          clearTimeout(timeout);
+          socket.off('kep:response', handleResponse);
+          socket.off('kep:sent', handleSent);
+          socket.off('error', handleError);
+          reject(new Error(`Server error: ${error.message}`));
+        }
+      };
 
       const handleResponse = async (kepResponseMessage) => {
         // Only handle response for this session
         if (kepResponseMessage.sessionId !== sessionId || kepResponseMessage.from !== peerId) {
+          console.log('KEP_RESPONSE received but not for this session:', {
+            receivedSessionId: kepResponseMessage.sessionId,
+            expectedSessionId: sessionId,
+            receivedFrom: kepResponseMessage.from,
+            expectedPeerId: peerId
+          });
           return; // Not for us
         }
 
+        console.log('KEP_RESPONSE received for session:', sessionId);
         clearTimeout(timeout);
         socket.off('kep:response', handleResponse);
+        socket.off('kep:sent', handleSent);
+        socket.off('error', handleError);
 
         try {
           // 10. Validate KEP_RESPONSE
@@ -102,8 +158,8 @@ export async function initiateSession(userId, peerId, password, socket) {
             throw new Error(`Invalid KEP_RESPONSE: ${validation.error}`);
           }
 
-          // 11. Import peer's ephemeral public key
-          const peerEphPubKey = await importPublicKey(kepResponseMessage.ephPub);
+          // 11. Import peer's ephemeral public key (ECDH for key derivation)
+          const peerEphPubKey = await importEphPublicKey(kepResponseMessage.ephPub);
 
           // 12. Compute shared secret (ECDH)
           const sharedSecret = await computeSharedSecret(ephPrivateKey, peerEphPubKey);
@@ -163,8 +219,11 @@ export async function initiateSession(userId, peerId, password, socket) {
       };
 
       socket.on('kep:response', handleResponse);
+      socket.on('kep:sent', handleSent);
+      socket.on('error', handleError);
 
       // Send KEP_INIT
+      console.log(`Sending KEP_INIT for session ${sessionId} to peer ${peerId}...`);
       socket.emit('kep:init', kepInitMessage);
       console.log(`✓ KEP_INIT sent for session ${sessionId}`);
     });
@@ -183,9 +242,10 @@ export async function initiateSession(userId, peerId, password, socket) {
  */
 export async function handleKEPInit(kepInitMessage, userId, password, socket) {
   try {
-    console.log(`Handling KEP_INIT from ${kepInitMessage.from}...`);
+    console.log(`[KEP] Handling KEP_INIT from ${kepInitMessage.from} for session ${kepInitMessage.sessionId}...`);
 
     // 1. Initialize session encryption
+    console.log(`[KEP] Step 1: Initializing session encryption...`);
     await initializeSessionEncryption(userId, password);
 
     // 2. Extract session info
@@ -211,8 +271,8 @@ export async function handleKEPInit(kepInitMessage, userId, password, socket) {
       throw new Error(`Failed to fetch peer's public identity key: ${error.message}`);
     }
 
-    // 5. Import peer's public identity key
-    const peerIdentityPubKey = await importPublicKey(peerIdentityPubKeyJWK);
+    // 5. Import peer's public identity key (ECDSA for signature verification)
+    const peerIdentityPubKey = await importIdentityPublicKey(peerIdentityPubKeyJWK);
 
     // 6. Validate KEP_INIT
     const validation = await validateKEPInit(kepInitMessage, peerIdentityPubKey, 120000, userId);
@@ -223,11 +283,11 @@ export async function handleKEPInit(kepInitMessage, userId, password, socket) {
     // 7. Load our identity private key
     const identityPrivateKey = await loadPrivateKey(userId, password);
 
-    // 8. Import peer's ephemeral public key
-    const peerEphPubKey = await importPublicKey(kepInitMessage.ephPub);
+    // 8. Import peer's ephemeral public key (ECDH for key derivation)
+    const peerEphPubKey = await importEphPublicKey(kepInitMessage.ephPub);
 
     // 9. Generate our ephemeral key pair
-    const { privateKey: ephPrivateKey, publicKey: ephPublicKey } = await generateEphemeralKeyPair();
+    let { privateKey: ephPrivateKey, publicKey: ephPublicKey } = await generateEphemeralKeyPair();
 
     // 10. Compute shared secret (ECDH)
     const sharedSecret = await computeSharedSecret(ephPrivateKey, peerEphPubKey);
@@ -241,6 +301,7 @@ export async function handleKEPInit(kepInitMessage, userId, password, socket) {
     );
 
     // 12. Build KEP_RESPONSE
+    console.log(`[KEP] Step 12: Building KEP_RESPONSE message...`);
     const kepResponseMessage = await buildKEPResponse(
       userId,
       peerId,
@@ -249,10 +310,12 @@ export async function handleKEPInit(kepInitMessage, userId, password, socket) {
       rootKey,
       sessionId
     );
+    console.log(`[KEP] KEP_RESPONSE message built successfully`);
 
     // 13. Send KEP_RESPONSE via WebSocket
+    console.log(`[KEP] Step 13: Sending KEP_RESPONSE to peer ${peerId} via WebSocket...`);
     socket.emit('kep:response', kepResponseMessage);
-    console.log(`✓ KEP_RESPONSE sent for session ${sessionId}`);
+    console.log(`[KEP] ✓ KEP_RESPONSE sent for session ${sessionId} to peer ${peerId}`);
 
     // 14. Create and store session
     const session = {

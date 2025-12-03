@@ -37,6 +37,8 @@ import { toast } from "../hooks/use-toast";
 import api from "../services/api";
 import { formatChatTimestamp } from "../utils/formatTime";
 import { validatePassword } from "../utils/passwordValidation";
+import { BatchSessionEstablishment } from "../components/admin/BatchSessionEstablishment";
+import { io } from "socket.io-client";
 
 function SettingItem({ icon: Icon, label, description, action, onClick, danger }) {
   // If there's an action (like Switch), render as div to avoid nested buttons
@@ -75,9 +77,39 @@ function SettingItem({ icon: Icon, label, description, action, onClick, danger }
 }
 
 export default function Settings() {
-  const { user, logout } = useAuth();
+  const { user, logout, accessToken } = useAuth();
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
+  const [socket, setSocket] = useState(null);
+
+  // Initialize WebSocket connection for session establishment
+  useEffect(() => {
+    if (!accessToken) return;
+
+    const wsURL = import.meta.env.DEV 
+      ? window.location.origin
+      : 'https://localhost:8443';
+    
+    const newSocket = io(wsURL, {
+      transports: ['polling', 'websocket'],
+      rejectUnauthorized: false,
+      auth: {
+        token: accessToken
+      },
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: Infinity,
+      reconnectionDelayMax: 10000,
+      timeout: 20000,
+      forceNew: false
+    });
+
+    setSocket(newSocket);
+
+    return () => {
+      newSocket.close();
+    };
+  }, [accessToken]);
   
   // Load settings from localStorage
   const [settings, setSettings] = useState(() => getUserSettings());

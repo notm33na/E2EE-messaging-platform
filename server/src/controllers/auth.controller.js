@@ -567,3 +567,56 @@ export async function reactivate(req, res, next) {
   }
 }
 
+/**
+ * Search for users by email
+ * GET /api/auth/users/search?q=query
+ */
+export async function searchUsers(req, res, next) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Not authenticated'
+      });
+    }
+
+    const { q } = req.query;
+    const limit = parseInt(req.query.limit) || 10;
+
+    if (!q || q.trim().length < 2) {
+      return res.json({
+        success: true,
+        data: []
+      });
+    }
+
+    // Debug logging in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Search users request:', {
+        query: q,
+        excludeUserId: req.user.id,
+        limit
+      });
+    }
+
+    const users = await userService.searchUsers(q, req.user.id, limit);
+
+    // Debug logging in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Search users result:', {
+        query: q,
+        found: users.length,
+        userIds: users.map(u => u.id),
+        emails: users.map(u => u.email)
+      });
+    }
+
+    res.json({
+      success: true,
+      data: users
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+

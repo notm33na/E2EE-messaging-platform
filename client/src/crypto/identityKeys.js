@@ -12,7 +12,7 @@
  */
 
 const DB_NAME = 'InfosecCryptoDB';
-const DB_VERSION = 3; // Must match the highest version used by any module (clientLogger uses 3)
+const DB_VERSION = 7; // Must match the highest version used by any module
 const STORE_NAME = 'identityKeys';
 
 /**
@@ -32,9 +32,47 @@ async function openDB() {
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'userId' });
       }
-      // Note: Other stores (sessions, clientLogs) are created by their respective modules
+      // Also ensure other common stores exist (for backward compatibility)
+      if (!db.objectStoreNames.contains('sessions')) {
+        db.createObjectStore('sessions', { keyPath: 'sessionId' });
+      }
+      if (!db.objectStoreNames.contains('sessionEncryptionKeys')) {
+        db.createObjectStore('sessionEncryptionKeys', { keyPath: 'userId' });
+      }
+      if (!db.objectStoreNames.contains('messages')) {
+        const msgStore = db.createObjectStore('messages', { keyPath: 'id' });
+        msgStore.createIndex('sessionId', 'sessionId', { unique: false });
+        msgStore.createIndex('timestamp', 'timestamp', { unique: false });
+        msgStore.createIndex('seq', 'seq', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('clientLogs')) {
+        const logStore = db.createObjectStore('clientLogs', { 
+          keyPath: 'id', 
+          autoIncrement: true 
+        });
+        logStore.createIndex('timestamp', 'timestamp', { unique: false });
+        logStore.createIndex('userId', 'userId', { unique: false });
+        logStore.createIndex('sessionId', 'sessionId', { unique: false });
+        logStore.createIndex('event', 'event', { unique: false });
+        logStore.createIndex('synced', 'synced', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('messageQueue')) {
+        const queueStore = db.createObjectStore('messageQueue', { keyPath: 'id', autoIncrement: true });
+        queueStore.createIndex('sessionId', 'sessionId', { unique: false });
+        queueStore.createIndex('timestamp', 'timestamp', { unique: false });
+      }
     };
   });
+}
+
+/**
+ * Checks if Web Crypto API is available
+ * @returns {boolean}
+ */
+function isCryptoAvailable() {
+  // Simply check if crypto.subtle exists
+  // The browser will enforce secure context requirements itself
+  return typeof crypto !== 'undefined' && typeof crypto.subtle !== 'undefined';
 }
 
 /**
@@ -43,6 +81,34 @@ async function openDB() {
  */
 export async function generateIdentityKeyPair() {
   try {
+    // Check if Web Crypto API is available
+    if (!isCryptoAvailable()) {
+      const hasCrypto = typeof crypto !== 'undefined';
+      const hasSubtle = hasCrypto && typeof crypto.subtle !== 'undefined';
+      const isSecure = typeof window !== 'undefined' && window.isSecureContext;
+      const isLocalhost = typeof window !== 'undefined' && (
+        window.location.hostname === 'localhost' || 
+        window.location.hostname === '127.0.0.1' ||
+        window.location.hostname === '[::1]'
+      );
+      
+      let errorMsg = 'Web Crypto API is not available. ';
+      
+      if (!hasCrypto) {
+        errorMsg += 'Your browser does not support the Web Crypto API. ';
+      } else if (!hasSubtle) {
+        errorMsg += 'Your browser does not support crypto.subtle. ';
+      }
+      
+      if (typeof window !== 'undefined' && !isSecure && !isLocalhost) {
+        errorMsg += 'This page must be served over HTTPS (or localhost) to use encryption. ';
+      }
+      
+      errorMsg += 'Please use a modern browser (Chrome, Firefox, Edge, Safari) and ensure you are accessing the site over HTTPS or localhost.';
+      
+      throw new Error(errorMsg);
+    }
+
     const keyPair = await crypto.subtle.generateKey(
       {
         name: 'ECDSA',
@@ -57,7 +123,11 @@ export async function generateIdentityKeyPair() {
       publicKey: keyPair.publicKey
     };
   } catch (error) {
-    throw new Error(`Failed to generate identity key pair: ${error.message}`);
+    // If error already has a helpful message, re-throw it
+    if (error.message && error.message.includes('Web Crypto API')) {
+      throw error;
+    }
+    throw new Error(`Failed to generate identity key pair: ${error.message || error.toString()}`);
   }
 }
 
@@ -68,6 +138,11 @@ export async function generateIdentityKeyPair() {
  * @returns {Promise<CryptoKey>}
  */
 async function deriveKeyFromPassword(password, salt) {
+  // Check if Web Crypto API is available
+  if (!isCryptoAvailable()) {
+    throw new Error('Web Crypto API is not available. This page must be served over HTTPS (or localhost).');
+  }
+
   // Allow tests to lower iteration count via environment for performance,
   // while keeping production-strength defaults.
   const iterations =
@@ -109,6 +184,11 @@ async function deriveKeyFromPassword(password, salt) {
  * @returns {Promise<void>}
  */
 export async function storePrivateKeyEncrypted(userId, privateKey, password) {
+  // Check if Web Crypto API is available
+  if (!isCryptoAvailable()) {
+    throw new Error('Web Crypto API is not available. This page must be served over HTTPS (or localhost).');
+  }
+
   try {
     // Export private key to JWK format
     const jwk = await crypto.subtle.exportKey('jwk', privateKey);
@@ -166,6 +246,11 @@ export async function storePrivateKeyEncrypted(userId, privateKey, password) {
  * @returns {Promise<CryptoKey>}
  */
 export async function loadPrivateKey(userId, password) {
+  // Check if Web Crypto API is available
+  if (!isCryptoAvailable()) {
+    throw new Error('Web Crypto API is not available. This page must be served over HTTPS (or localhost).');
+  }
+
   try {
     // Load from IndexedDB
     const db = await openDB();
@@ -191,33 +276,71 @@ export async function loadPrivateKey(userId, password) {
     const decryptionKey = await deriveKeyFromPassword(password, salt);
 
     // Decrypt
-    const decryptedData = await crypto.subtle.decrypt(
-      {
-        name: 'AES-GCM',
-        iv: iv
-      },
-      decryptionKey,
-      encryptedData
-    );
+    let decryptedData;
+    try {
+      decryptedData = await crypto.subtle.decrypt(
+        {
+          name: 'AES-GCM',
+          iv: iv
+        },
+        decryptionKey,
+        encryptedData
+      );
+    } catch (decryptError) {
+      // Decryption failed - likely wrong password
+      const errorMsg = decryptError.message || decryptError.name || 'Decryption failed';
+      throw new Error(`Failed to decrypt private key. The password may be incorrect. (${errorMsg})`);
+    }
 
     // Parse JWK and import key
-    const decoder = new TextDecoder();
-    const jwk = JSON.parse(decoder.decode(decryptedData));
+    let jwk;
+    try {
+      const decoder = new TextDecoder();
+      jwk = JSON.parse(decoder.decode(decryptedData));
+    } catch (parseError) {
+      throw new Error('Failed to parse decrypted key data. The key may be corrupted.');
+    }
 
-    const privateKey = await crypto.subtle.importKey(
-      'jwk',
-      jwk,
-      {
-        name: 'ECDSA',
-        namedCurve: 'P-256'
-      },
-      true,
-      ['sign']
-    );
+    let privateKey;
+    try {
+      privateKey = await crypto.subtle.importKey(
+        'jwk',
+        jwk,
+        {
+          name: 'ECDSA',
+          namedCurve: 'P-256'
+        },
+        true,
+        ['sign']
+      );
+    } catch (importError) {
+      const errorMsg = importError.message || importError.name || 'Import failed';
+      throw new Error(`Failed to import private key. The key data may be corrupted. (${errorMsg})`);
+    }
 
     return privateKey;
   } catch (error) {
-    throw new Error(`Failed to load private key: ${error.message}`);
+    // If error already has a user-friendly message, re-throw it
+    if (error.message && error.message.includes('Failed to decrypt') || 
+        error.message && error.message.includes('Failed to parse') ||
+        error.message && error.message.includes('Failed to import')) {
+      throw error;
+    }
+    
+    // Provide more detailed error messages for other errors
+    let errorMessage = error.message || error.name || error.toString() || 'Unknown error';
+    
+    if (errorMessage.includes('not found') || errorMessage.includes('No such object')) {
+      errorMessage = 'Private key not found. Please generate an identity key pair in the Keys page.';
+    } else if (errorMessage.includes('decrypt') || errorMessage.includes('password') || errorMessage.includes('bad decrypt')) {
+      errorMessage = 'Failed to decrypt private key. The password may be incorrect.';
+    } else if (errorMessage.includes('importKey') || errorMessage.includes('Invalid key')) {
+      errorMessage = 'Private key data is corrupted. Please regenerate your identity key pair.';
+    }
+    
+    const detailedError = new Error(`Failed to load private key: ${errorMessage}`);
+    detailedError.originalError = error;
+    throw detailedError;
   }
 }
 
@@ -240,6 +363,11 @@ export async function exportPublicKey(publicKey) {
  * @returns {Promise<CryptoKey>}
  */
 export async function importPublicKey(jwk) {
+  // Check if Web Crypto API is available
+  if (!isCryptoAvailable()) {
+    throw new Error('Web Crypto API is not available. This page must be served over HTTPS (or localhost).');
+  }
+
   try {
     return await crypto.subtle.importKey(
       'jwk',

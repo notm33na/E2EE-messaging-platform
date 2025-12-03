@@ -52,6 +52,32 @@ beforeEach(async () => {
   // Clear IndexedDB between tests
   await clearIndexedDB();
   
+  // Ensure clientLogs store exists after clearing
+  try {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('InfosecCryptoDB', 5);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains('clientLogs')) {
+          const store = db.createObjectStore('clientLogs', { 
+            keyPath: 'id', 
+            autoIncrement: true 
+          });
+          store.createIndex('timestamp', 'timestamp', { unique: false });
+          store.createIndex('userId', 'userId', { unique: false });
+          store.createIndex('sessionId', 'sessionId', { unique: false });
+          store.createIndex('event', 'event', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+      };
+    });
+    db.close();
+  } catch (error) {
+    // Ignore errors in setup
+  }
+  
   // Clear console mocks if any
   jest.clearAllMocks();
 });

@@ -60,6 +60,21 @@ export default function Logs() {
             </Button>
           ))}
         </div>
+        
+        {/* Debug Info (remove in production) */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="text-xs text-muted-foreground space-y-1">
+            <div>Total logs: {logs.length} | Filtered: {filteredLogs.length} | Loading: {loading ? 'Yes' : 'No'} | Error: {error || 'None'}</div>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={refetch}
+              className="mt-2"
+            >
+              Refresh Logs
+            </Button>
+          </div>
+        )}
 
         {/* Logs List */}
         {loading ? (

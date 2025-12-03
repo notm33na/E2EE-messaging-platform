@@ -146,7 +146,8 @@ export function initializeWebSocket(httpsServer) {
   }, 60000); // Every minute
 
   // Helper function to require authentication with token refresh check
-  const requireAuth = (socket, handler) => {
+  // allowStaleToken: if true, allows operations even with old tokens (for KEP, etc.)
+  const requireAuth = (socket, handler, allowStaleToken = false) => {
     return (...args) => {
       if (!socket.data.user) {
         socket.emit('error', {
@@ -159,7 +160,9 @@ export function initializeWebSocket(httpsServer) {
       }
       
       // Check if token refresh is required for critical operations
-      if (socket.data.requiresRefresh) {
+      // KEP operations should work with any valid token (allowStaleToken = true)
+      // This allows session establishment even with tokens that are getting old
+      if (!allowStaleToken && socket.data.requiresRefresh) {
         socket.emit('error', {
           message: 'Token refresh required for this operation',
           code: 'TOKEN_REFRESH_REQUIRED',
@@ -245,8 +248,9 @@ export function initializeWebSocket(httpsServer) {
       });
     });
 
-    // KEP:INIT event handler - requires authentication
+    // KEP:INIT event handler - requires authentication (allow stale tokens for KEP)
     socket.on('kep:init', requireAuth(socket, async (data) => {
+      // Note: Third parameter (true) allows stale tokens for KEP operations
 
       // Rate limiting check for KEP
       const rateLimit = messageRateLimits.get(socket.id);
@@ -267,13 +271,33 @@ export function initializeWebSocket(httpsServer) {
       }
 
       try {
-        const { to, sessionId, timestamp, seq, message } = data;
+        // Validate KEP_INIT message structure
+        const { type, from, to, sessionId, ephPub, signature, timestamp, nonce, seq } = data;
 
-        // Validate required fields
-        if (!to || !sessionId || !timestamp || !seq || !message) {
-          logInvalidKEPMessage(socket.data.user.id, sessionId, 'Missing required fields');
+        // Validate required fields for KEP_INIT
+        if (!type || type !== 'KEP_INIT') {
+          logInvalidKEPMessage(socket.data.user.id, sessionId || 'unknown', 'Invalid message type');
+          socket.emit('error', {
+            message: 'Invalid KEP_INIT message: invalid type',
+            timestamp: new Date().toISOString()
+          });
+          return;
+        }
+
+        if (!from || !to || !sessionId || !ephPub || !signature || !timestamp || !nonce || seq === undefined) {
+          logInvalidKEPMessage(socket.data.user.id, sessionId || 'unknown', 'Missing required fields');
           socket.emit('error', {
             message: 'Invalid KEP_INIT message: missing fields',
+            timestamp: new Date().toISOString()
+          });
+          return;
+        }
+
+        // Verify that 'from' matches the authenticated user
+        if (from !== socket.data.user.id) {
+          logInvalidKEPMessage(socket.data.user.id, sessionId, 'From field does not match authenticated user');
+          socket.emit('error', {
+            message: 'Invalid KEP_INIT message: from field mismatch',
             timestamp: new Date().toISOString()
           });
           return;
@@ -318,19 +342,13 @@ export function initializeWebSocket(httpsServer) {
           timestamp: new Date().toISOString()
         });
 
-        // Forward to recipient if online
+        // Forward full KEP_INIT message to recipient if online
         const sockets = await io.fetchSockets();
         const recipientSocket = sockets.find(s => s.data.user?.id === to);
 
         if (recipientSocket) {
-          recipientSocket.emit('kep:init', {
-            messageId,
-            from: socket.data.user.id,
-            sessionId,
-            message,
-            timestamp,
-            seq
-          });
+          // Forward the complete KEP_INIT message
+          recipientSocket.emit('kep:init', data);
 
           kepMessage.delivered = true;
           kepMessage.deliveredAt = new Date();
@@ -349,10 +367,12 @@ export function initializeWebSocket(httpsServer) {
           timestamp: new Date().toISOString()
         });
       }
-    }));
+    }, true));
 
-    // KEP:RESPONSE event handler - requires authentication
+    // KEP:RESPONSE event handler - requires authentication (allow stale tokens for KEP)
     socket.on('kep:response', requireAuth(socket, async (data) => {
+      // Note: Third parameter (true) allows stale tokens for KEP operations
+      console.log(`[KEP] Received KEP_RESPONSE from ${socket.data.user.id} for session ${data.sessionId}`);
 
       // Rate limiting check for KEP
       const rateLimit = messageRateLimits.get(socket.id);
@@ -373,13 +393,33 @@ export function initializeWebSocket(httpsServer) {
       }
 
       try {
-        const { to, sessionId, timestamp, seq, message } = data;
+        // Validate KEP_RESPONSE message structure
+        const { type, from, to, sessionId, ephPub, signature, keyConfirmation, timestamp, nonce, seq } = data;
 
-        // Validate required fields
-        if (!to || !sessionId || !timestamp || !seq || !message) {
-          logInvalidKEPMessage(socket.data.user.id, sessionId, 'Missing required fields');
+        // Validate required fields for KEP_RESPONSE
+        if (!type || type !== 'KEP_RESPONSE') {
+          logInvalidKEPMessage(socket.data.user.id, sessionId || 'unknown', 'Invalid message type');
+          socket.emit('error', {
+            message: 'Invalid KEP_RESPONSE message: invalid type',
+            timestamp: new Date().toISOString()
+          });
+          return;
+        }
+
+        if (!from || !to || !sessionId || !ephPub || !signature || !keyConfirmation || !timestamp || !nonce || seq === undefined) {
+          logInvalidKEPMessage(socket.data.user.id, sessionId || 'unknown', 'Missing required fields');
           socket.emit('error', {
             message: 'Invalid KEP_RESPONSE message: missing fields',
+            timestamp: new Date().toISOString()
+          });
+          return;
+        }
+
+        // Verify that 'from' matches the authenticated user
+        if (from !== socket.data.user.id) {
+          logInvalidKEPMessage(socket.data.user.id, sessionId, 'From field does not match authenticated user');
+          socket.emit('error', {
+            message: 'Invalid KEP_RESPONSE message: from field mismatch',
             timestamp: new Date().toISOString()
           });
           return;
@@ -424,23 +464,21 @@ export function initializeWebSocket(httpsServer) {
           timestamp: new Date().toISOString()
         });
 
-        // Forward to recipient if online
+        // Forward full KEP_RESPONSE message to recipient if online
         const sockets = await io.fetchSockets();
         const recipientSocket = sockets.find(s => s.data.user?.id === to);
 
         if (recipientSocket) {
-          recipientSocket.emit('kep:response', {
-            messageId,
-            from: socket.data.user.id,
-            sessionId,
-            message,
-            timestamp,
-            seq
-          });
+          // Forward the complete KEP_RESPONSE message
+          console.log(`[KEP] Forwarding KEP_RESPONSE from ${socket.data.user.id} to ${to} (session ${data.sessionId})`);
+          recipientSocket.emit('kep:response', data);
 
           kepMessage.delivered = true;
           kepMessage.deliveredAt = new Date();
           await kepMessage.save();
+          console.log(`[KEP] ✓ KEP_RESPONSE delivered to ${to}`);
+        } else {
+          console.warn(`[KEP] KEP_RESPONSE recipient ${to} not found online`);
         }
 
         socket.emit('kep:sent', {
@@ -464,7 +502,7 @@ export function initializeWebSocket(httpsServer) {
           });
         }
       }
-    }));
+    }, true));
 
     // MSG:SEND event handler - Encrypted message sending - requires authentication
     socket.on('msg:send', requireAuth(socket, async (envelope) => {

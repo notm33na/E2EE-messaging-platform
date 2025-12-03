@@ -145,10 +145,12 @@ export async function getPendingMessages(req, res, next) {
     }
 
     // Only allow users to fetch their own pending messages
-    if (req.user && req.user.id !== userId) {
+    // Compare as strings to handle ObjectId vs string mismatches
+    if (req.user && String(req.user.id) !== String(userId)) {
       return res.status(403).json({
         success: false,
-        error: 'Forbidden'
+        error: 'Forbidden',
+        message: 'Cannot access messages for another user'
       });
     }
 

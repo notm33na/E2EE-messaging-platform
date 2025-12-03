@@ -162,6 +162,8 @@ export async function exportPublicKey(publicKey) {
  */
 export async function importPublicKey(jwk) {
   try {
+    // For ECDH public keys, we only need deriveBits (not deriveKey)
+    // Node.js Web Crypto API requires this specific usage for public keys
     return await crypto.subtle.importKey(
       'jwk',
       jwk,
@@ -170,7 +172,7 @@ export async function importPublicKey(jwk) {
         namedCurve: 'P-256'
       },
       true,
-      ['deriveKey', 'deriveBits']
+      ['deriveBits'] // Public keys only need deriveBits, not deriveKey
     );
   } catch (error) {
     throw new Error(`Failed to import public key: ${error.message}`);

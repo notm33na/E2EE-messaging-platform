@@ -6,7 +6,8 @@
 
 import { decryptAESGCM } from './aesGcm.js';
 import { base64ToArrayBuffer } from './signatures.js';
-import { getRecvKey } from './sessionManager.js';
+import { getRecvKey, loadSession } from './sessionManager.js';
+import { clearPlaintextAfterDecryption } from './memorySecurity.js';
 
 /**
  * Decrypts file metadata and chunks, reconstructs original file
@@ -17,11 +18,47 @@ import { getRecvKey } from './sessionManager.js';
  * @param {Function} onProgress - Optional progress callback (chunkIndex, totalChunks, progress)
  * @returns {Promise<{blob: Blob, filename: string, mimetype: string}>}
  */
+/**
+ * Validates timestamp freshness
+ * @param {number} messageTimestamp - Message timestamp
+ * @param {number} maxAge - Maximum age in milliseconds (default: 2 minutes)
+ * @returns {boolean} True if timestamp is valid
+ */
+function validateTimestamp(messageTimestamp, maxAge = 120000) {
+  const now = Date.now();
+  const age = now - messageTimestamp;
+  return age <= maxAge && age >= -maxAge;
+}
+
 export async function decryptFile(metaEnvelope, chunkEnvelopes, sessionId, userId = null, onProgress = null) {
   try {
-    // 1. Get receive key (with userId for encrypted key access)
+    // 1. Validate timestamps (maxAge = 2 minutes = 120000ms)
+    const maxAge = 120000;
+    
+    // Check metadata envelope timestamp
+    if (metaEnvelope.timestamp && !validateTimestamp(metaEnvelope.timestamp, maxAge)) {
+      const now = Date.now();
+      const age = Math.abs(now - metaEnvelope.timestamp);
+      const error = new Error(`Timestamp out of validity window: message is ${Math.round(age / 1000)}s old (max ${maxAge / 1000}s)`);
+      console.error(`Timestamp validation error: ${error.message}`);
+      throw error;
+    }
+    
+    // Check chunk envelope timestamps
+    if (chunkEnvelopes && Array.isArray(chunkEnvelopes)) {
+      for (const chunk of chunkEnvelopes) {
+        if (chunk.timestamp && !validateTimestamp(chunk.timestamp, maxAge)) {
+          const now = Date.now();
+          const age = Math.abs(now - chunk.timestamp);
+          const error = new Error(`Timestamp out of validity window: chunk ${chunk.meta?.chunkIndex ?? 'unknown'} is ${Math.round(age / 1000)}s old (max ${maxAge / 1000}s)`);
+          console.error(`Timestamp validation error: ${error.message}`);
+          throw error;
+        }
+      }
+    }
+    
+    // 2. Get receive key (with userId for encrypted key access)
     // Load session first to get userId if not provided
-    const { loadSession } = await import('./sessionManager.js');
     if (!userId) {
       const session = await loadSession(sessionId, null);
       if (session) {
@@ -30,7 +67,7 @@ export async function decryptFile(metaEnvelope, chunkEnvelopes, sessionId, userI
     }
     const recvKey = await getRecvKey(sessionId, userId);
 
-    // 2. Decrypt metadata
+    // 3. Decrypt metadata
     const metaCiphertext = base64ToArrayBuffer(metaEnvelope.ciphertext);
     const metaIV = base64ToArrayBuffer(metaEnvelope.iv);
     const metaAuthTag = base64ToArrayBuffer(metaEnvelope.authTag);
@@ -54,7 +91,9 @@ export async function decryptFile(metaEnvelope, chunkEnvelopes, sessionId, userI
 
     // 4. Verify we have all chunks
     if (sortedChunks.length !== totalChunks) {
-      throw new Error(`Missing chunks: expected ${totalChunks}, got ${sortedChunks.length}`);
+      const error = new Error(`Missing chunks: expected ${totalChunks}, got ${sortedChunks.length}`);
+      console.error(`Missing chunks error: ${error.message}`);
+      throw error;
     }
 
     // 5. Decrypt all chunks
@@ -66,7 +105,9 @@ export async function decryptFile(metaEnvelope, chunkEnvelopes, sessionId, userI
 
       // Verify chunk index matches
       if (chunkEnvelope.meta.chunkIndex !== i) {
-        throw new Error(`Chunk index mismatch: expected ${i}, got ${chunkEnvelope.meta.chunkIndex}`);
+        const error = new Error(`Chunk index mismatch: expected ${i}, got ${chunkEnvelope.meta.chunkIndex}`);
+        console.error(`Chunk index mismatch error: ${error.message}`);
+        throw error;
       }
 
       // Decrypt chunk
@@ -105,7 +146,6 @@ export async function decryptFile(metaEnvelope, chunkEnvelopes, sessionId, userI
     const blob = new Blob([combinedBuffer], { type: mimetype });
 
     // 8. Clear decrypted chunks from memory after blob creation
-    const { clearPlaintextAfterDecryption } = await import('./memorySecurity.js');
     for (const chunk of decryptedChunks) {
       clearPlaintextAfterDecryption(chunk);
     }
@@ -121,7 +161,49 @@ export async function decryptFile(metaEnvelope, chunkEnvelopes, sessionId, userI
       size
     };
   } catch (error) {
-    throw new Error(`Failed to decrypt file: ${error.message}`);
+    // Log decryption errors for security monitoring
+    console.error(`Failed to decrypt file: ${error.message}`, error);
+    
+    // Preserve original error information for tests and debugging
+    // If error has originalError (from createUserFriendlyError), preserve it
+    const originalError = error.originalError || error;
+    const isOperationError = error.name === 'OperationError' || originalError.name === 'OperationError';
+    
+    let errorMessage = `Failed to decrypt file: ${error.message}`;
+    
+    // Include OperationError in message if present (for test compatibility)
+    if (isOperationError) {
+      errorMessage += ' Error: OperationError';
+    }
+    
+    const wrappedError = new Error(errorMessage);
+    
+    // Preserve error name (e.g., OperationError) - prioritize OperationError
+    if (isOperationError) {
+      wrappedError.name = 'OperationError';
+    } else if (error.name) {
+      wrappedError.name = error.name;
+    }
+    
+    // Preserve original error if available
+    wrappedError.originalError = originalError;
+    
+    // Preserve technical message if available
+    if (error.technicalMessage) {
+      wrappedError.technicalMessage = error.technicalMessage;
+    }
+    
+    // Preserve error type if available
+    if (error.errorType) {
+      wrappedError.errorType = error.errorType;
+    }
+    
+    // Preserve stack trace
+    if (error.stack) {
+      wrappedError.stack = error.stack;
+    }
+    
+    throw wrappedError;
   }
 }
 

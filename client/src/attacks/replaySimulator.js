@@ -107,6 +107,8 @@ export async function captureMessage(sessionId, envelope) {
  * @returns {Promise<Object>} Replay attempt result
  */
 export async function resendMessage(sessionId, messageId, validateMessage) {
+  const errorLog = [];
+  
   try {
     const captured = capturedMessages.get(messageId);
     
@@ -115,7 +117,17 @@ export async function resendMessage(sessionId, messageId, validateMessage) {
         sessionId,
         messageId
       });
-      throw new Error('Message not captured');
+      const error = new Error('Message not captured');
+      errorLog.push({
+        timestamp: new Date().toISOString(),
+        function: 'resendMessage',
+        sessionId,
+        error: {
+          message: error.message,
+          name: error.name
+        }
+      });
+      throw error;
     }
 
     logReplayEvent('REPLAY_ATTEMPT', 'Attempting to replay captured message', {
@@ -142,7 +154,8 @@ export async function resendMessage(sessionId, messageId, validateMessage) {
         replaySuccessful: false,
         reason: validation.reason,
         blockedBy: validation.protection,
-        log: attackLog
+        log: [...attackLog],
+        errorLog: errorLog
       };
     }
 
@@ -156,15 +169,36 @@ export async function resendMessage(sessionId, messageId, validateMessage) {
     return {
       replaySuccessful: false,
       reason: 'Replay protection should have blocked this',
-      log: attackLog
+      log: [...attackLog],
+      errorLog: errorLog
     };
   } catch (error) {
+    const errorDetails = {
+      timestamp: new Date().toISOString(),
+      function: 'resendMessage',
+      sessionId,
+      error: {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      }
+    };
+    errorLog.push(errorDetails);
+    
     logReplayEvent('REPLAY_ERROR', 'Replay attack simulation error', {
       sessionId,
       messageId,
       error: error.message
     });
-    throw error;
+    
+    // Return error instead of throwing
+    return {
+      replaySuccessful: false,
+      reason: `Replay simulation error: ${error.message}`,
+      blockedBy: 'ERROR',
+      log: [...attackLog],
+      errorLog: errorLog
+    };
   }
 }
 
@@ -220,6 +254,8 @@ export async function validateMessageForReplay(envelope, lastSeq, timestampWindo
  * @returns {Promise<Object>} Replay attempt result
  */
 export async function simulateReplayWithTimestampCheck(sessionId, envelope, lastSeq) {
+  const errorLog = [];
+  
   try {
     attackLog.length = 0; // Clear previous log
     
@@ -242,13 +278,35 @@ export async function simulateReplayWithTimestampCheck(sessionId, envelope, last
       async (msg) => validateMessageForReplay(msg, lastSeq)
     );
 
-    return result;
+    return {
+      ...result,
+      errorLog: [...errorLog, ...(result.errorLog || [])]
+    };
   } catch (error) {
+    const errorDetails = {
+      timestamp: new Date().toISOString(),
+      function: 'simulateReplayWithTimestampCheck',
+      sessionId,
+      error: {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      }
+    };
+    errorLog.push(errorDetails);
+    
     logReplayEvent('REPLAY_ERROR', 'Replay simulation error', {
       sessionId,
       error: error.message
     });
-    throw error;
+    
+    return {
+      replaySuccessful: false,
+      reason: `Replay simulation error: ${error.message}`,
+      blockedBy: 'ERROR',
+      log: [...attackLog],
+      errorLog: errorLog
+    };
   }
 }
 
@@ -261,6 +319,8 @@ export async function simulateReplayWithTimestampCheck(sessionId, envelope, last
  * @returns {Promise<Object>} Replay attempt result
  */
 export async function simulateReplayWithSequenceCheck(sessionId, envelope, lastSeq) {
+  const errorLog = [];
+  
   try {
     attackLog.length = 0; // Clear previous log
     
@@ -280,13 +340,35 @@ export async function simulateReplayWithSequenceCheck(sessionId, envelope, lastS
       async (msg) => validateMessageForReplay(msg, lastSeq)
     );
 
-    return result;
+    return {
+      ...result,
+      errorLog: [...errorLog, ...(result.errorLog || [])]
+    };
   } catch (error) {
+    const errorDetails = {
+      timestamp: new Date().toISOString(),
+      function: 'simulateReplayWithSequenceCheck',
+      sessionId,
+      error: {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      }
+    };
+    errorLog.push(errorDetails);
+    
     logReplayEvent('REPLAY_ERROR', 'Replay simulation error', {
       sessionId,
       error: error.message
     });
-    throw error;
+    
+    return {
+      replaySuccessful: false,
+      reason: `Replay simulation error: ${error.message}`,
+      blockedBy: 'ERROR',
+      log: [...attackLog],
+      errorLog: errorLog
+    };
   }
 }
 

@@ -78,24 +78,40 @@ api.interceptors.response.use(
       try {
         // Attempt to refresh token
         const response = await axios.post(`${baseURL}/auth/refresh`, {}, {
-          withCredentials: true
+          withCredentials: true,
+          timeout: 5000
         });
 
-        if (response.data.success) {
+        if (response.data && response.data.success) {
           const newToken = response.data.data.accessToken;
           notifyTokenUpdate(newToken);
           processQueue(null, newToken);
           
           // Retry original request with new token
           originalRequest.headers.Authorization = `Bearer ${newToken}`;
+          // Remove the retry flag so we can retry
+          delete originalRequest._retry;
           return api(originalRequest);
         } else {
-          throw new Error('Token refresh failed');
+          throw new Error('Token refresh failed: Invalid response');
         }
       } catch (refreshError) {
         processQueue(refreshError, null);
-        // Clear token and redirect to login
+        // Clear token
         notifyTokenUpdate(null);
+        
+        // Mark that we tried to refresh (so components know refresh failed)
+        originalRequest._retry = true;
+        
+        // If refresh failed with 401, the refresh token is also expired
+        if (refreshError.response?.status === 401) {
+          console.warn('Token refresh failed: Refresh token expired. User needs to log in again.');
+        } else if (refreshError.code === 'ECONNREFUSED' || refreshError.message?.includes('Network Error')) {
+          console.error('Token refresh failed: Cannot connect to server.');
+        } else {
+          console.error('Token refresh failed:', refreshError.message);
+        }
+        
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

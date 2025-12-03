@@ -115,6 +115,8 @@ export function AuthProvider({ children }) {
         try {
           await initializeSessionEncryption(user.id, password);
           console.log('✓ Session encryption initialized');
+          // Cache password for session establishment
+          cachePassword(user.id, password);
         } catch (encError) {
           console.warn('Failed to initialize session encryption:', encError);
           // Non-fatal - sessions will require password on first access
@@ -281,13 +283,21 @@ export function AuthProvider({ children }) {
   const logout = async () => {
     try {
       if (accessToken) {
-        await api.post('/auth/logout', {}, {
-          headers: {
-            Authorization: `Bearer ${accessToken}`
+        try {
+          await api.post('/auth/logout', {}, {
+            headers: {
+              Authorization: `Bearer ${accessToken}`
+            }
+          });
+        } catch (error) {
+          // Ignore 401 errors on logout (token might be expired)
+          if (error.response?.status !== 401) {
+            console.error('Logout error:', error);
           }
-        });
+        }
       }
     } catch (error) {
+      // Ignore errors during logout
       console.error('Logout error:', error);
     } finally {
       // Clear session encryption cache on logout

@@ -6,16 +6,39 @@ import { ChatListItem } from "../components/chat/ChatListItem";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Skeleton } from "../components/ui/skeleton";
+import { NewChatDialog } from "../components/chat/NewChatDialog";
 import { useChatSessions } from "../hooks/useChatSessions";
 
 export default function Chats() {
   const [search, setSearch] = useState("");
+  const [newChatOpen, setNewChatOpen] = useState(false);
+  const [filter, setFilter] = useState("All");
   const navigate = useNavigate();
   const { sessions, loading, error } = useChatSessions();
 
-  const filteredChats = sessions.filter((chat) =>
-    chat.name.toLowerCase().includes(search.toLowerCase())
-  );
+  // Filter chats based on search and category
+  const filteredChats = sessions.filter((chat) => {
+    // Search filter
+    const matchesSearch = chat.name.toLowerCase().includes(search.toLowerCase()) ||
+                         (chat.lastMessage && chat.lastMessage.toLowerCase().includes(search.toLowerCase()));
+    
+    if (!matchesSearch) return false;
+
+    // Category filter
+    switch (filter) {
+      case "Unread":
+        return chat.unreadCount > 0;
+      case "Groups":
+        // Groups not implemented yet, return false for now
+        return false;
+      case "Archived":
+        // Archived not implemented yet, return false for now
+        return false;
+      case "All":
+      default:
+        return true;
+    }
+  });
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -33,7 +56,11 @@ export default function Chats() {
               className="pl-10"
             />
           </div>
-          <Button size="icon" className="flex-shrink-0">
+          <Button 
+            size="icon" 
+            className="flex-shrink-0"
+            onClick={() => setNewChatOpen(true)}
+          >
             <Plus className="w-5 h-5" />
           </Button>
         </div>
@@ -43,9 +70,10 @@ export default function Chats() {
           {["All", "Unread", "Groups", "Archived"].map((cat) => (
             <Button
               key={cat}
-              variant={cat === "All" ? "default" : "secondary"}
+              variant={filter === cat ? "default" : "secondary"}
               size="sm"
               className="flex-shrink-0"
+              onClick={() => setFilter(cat)}
             >
               {cat}
             </Button>
@@ -99,6 +127,9 @@ export default function Chats() {
           </>
         )}
       </div>
+
+      {/* New Chat Dialog */}
+      <NewChatDialog open={newChatOpen} onOpenChange={setNewChatOpen} />
     </div>
   );
 }
